@@ -1,0 +1,16 @@
+# /etc/caddy/Caddyfile — solo si NO usas Tailscale (ver DESPLIEGUE.md, opción B o C).
+# Sustituye el nombre por el de tu VM. Caddy sirve HTTPS y reenvía a Sazora en 127.0.0.1:8787.
+
+sazora.tu-dominio.es {
+	# Opción B (dominio propio, certificado por reto DNS): ver la guía.
+	# Opción C (red sin dominio): descomenta la línea siguiente e instala la CA de Caddy en los móviles.
+	# tls internal
+
+	encode gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy 127.0.0.1:8787 {
+		header_up X-Forwarded-Proto https
+	}
+}

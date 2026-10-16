@@ -1,0 +1,36 @@
+# /etc/systemd/system/sazora.service
+# Servidor de Sazora. Ajusta las rutas si instalas en otro sitio (ver DESPLIEGUE.md).
+[Unit]
+Description=Sazora
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sazora
+Group=sazora
+WorkingDirectory=/opt/sazora
+EnvironmentFile=/etc/sazora/sazora.env
+Environment=NODE_ENV=production
+Environment=SAZORA_DATA_DIR=/var/lib/sazora
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning server/index.mjs
+Restart=on-failure
+RestartSec=5
+
+# Aislamiento: solo puede escribir en su carpeta de datos.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/var/lib/sazora
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

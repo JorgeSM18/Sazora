@@ -1,0 +1,15 @@
+# /etc/systemd/system/sazora-copia.service — copia de seguridad de la base de datos.
+[Unit]
+Description=Copia de seguridad de Sazora
+
+[Service]
+Type=oneshot
+User=sazora
+Group=sazora
+WorkingDirectory=/opt/sazora
+Environment=SAZORA_DATA_DIR=/var/lib/sazora
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning server/copia.mjs
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/sazora

@@ -71,6 +71,8 @@ export function openDb(path = ':memory:') {
 
   return {
     close: () => db.close(),
+    /** Copia coherente de la base de datos a otro archivo, aunque haya escrituras en curso. */
+    backupTo: (file) => db.prepare('VACUUM INTO ?').run(file),
 
     createUser(username, name, password) {
       if (!/^[a-z0-9._-]{2,32}$/i.test(username)) throw new Error('Usuario no válido: 2-32 caracteres (letras, números, punto, guion).');

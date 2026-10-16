@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "server": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server/index.mjs",
     "start": "npm run build && npm run server",
-    "usuario": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server/usuarios.mjs"
+    "usuario": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server/usuarios.mjs",
+    "copia": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server/copia.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

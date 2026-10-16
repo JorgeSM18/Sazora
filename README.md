@@ -13,6 +13,8 @@ Cada usuario tiene su propia lista, su propia pauta y su propio registro, guarda
 - **Totales.** Porciones comidas, previstas y restantes frente a la pauta. Energía y macros cuando los alimentos tienen datos; nunca se inventan ni se completan con ceros.
 - **Recetas.** Los platos de ejemplo de la pauta, recetas propias, favoritas, raciones y cálculo por ración.
 - **Alimentos.** Catálogo con equivalencias y datos nutricionales opcionales, editables desde la etiqueta del producto.
+- **Cuentas.** Acceso con usuario y contraseña; alta desde la terminal del servidor o, si se activa, desde la app con un código de invitación.
+- **Instalable en el móvil** (Android e iPhone) desde el navegador, con su icono y a pantalla completa.
 
 ## Requisitos
 
@@ -37,6 +39,7 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 | `npm run server` | Servidor: API, base de datos e importación (y la web compilada, si existe `dist/`) |
 | `npm start` | Compila y arranca el servidor de producción (web y API en el mismo puerto) |
 | `npm run usuario -- crear <usuario> "<Nombre>"` | Crea un usuario. También `clave <usuario>`, `listar` y `borrar <usuario>` |
+| `npm run copia` | Copia de seguridad de la base de datos en `SAZORA_DATA_DIR/copias/` (conserva las últimas 14) |
 | `npm test` | Pruebas unitarias, de servidor y de extremo a extremo |
 | `npm run typecheck` · `npm run lint` · `npm run build` | Comprobaciones y compilación |
 
@@ -48,6 +51,8 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Modelo principal |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash` | Modelos de reserva si el principal está saturado |
 | `PORT` | `8787` | Puerto del servidor |
+| `HOST` | `127.0.0.1` | Dirección de escucha. Solo local por defecto (detrás del proxy HTTPS); `0.0.0.0` para abrirlo a la red |
+| `SAZORA_CODIGO_REGISTRO` | — | Código de invitación para crear cuentas desde la app. Sin él, el registro está desactivado |
 | `SAZORA_DATA_DIR` | `./server-data` | Base de datos y PDF de los usuarios |
 | `COOKIE_SECURE` | — | Pon `1` cuando se sirva por HTTPS |
 
@@ -59,7 +64,8 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 | `src/data/` | `repository.ts` (datos del usuario en el servidor), `maintenance.ts` y `fixtures/` (datos de prueba) |
 | `src/state/` | Estado global: carga los datos, aplica las funciones del dominio y guarda cada cambio |
 | `src/ui/` | Sesión, pantallas y componentes. Ninguna fórmula en la interfaz |
-| `server/` | `index.mjs` (arranque), `app.mjs` (rutas), `db.mjs` (SQLite), `gemini.mjs` (lectura de PDF), `usuarios.mjs` (gestión de usuarios) |
+| `server/` | `index.mjs` (arranque), `app.mjs` (rutas), `db.mjs` (SQLite), `gemini.mjs` (lectura de PDF), `usuarios.mjs` (gestión de usuarios), `copia.mjs` (copias de seguridad) |
+| `deploy/` | Servicio de systemd, copia diaria y configuración de Caddy (ver [DESPLIEGUE.md](DESPLIEGUE.md)) |
 | `brand/` | Identidad visual: tokens de diseño (la app importa `tokens.css`) y logotipo |
 
 **Decisiones principales**
@@ -86,7 +92,7 @@ El orden importa: primero la lista de alimentos y después la pauta. Un PDF que 
 
 ## Seguridad
 
-- **Acceso:** usuarios creados solo desde el servidor (no hay registro público). Contraseñas con scrypt y sal; sesiones con token aleatorio, guardado solo como hash, de 30 días.
+- **Acceso:** sin registro público. Los usuarios se crean desde el servidor o, si se activa, desde la app con un código de invitación (comparación en tiempo constante y bloqueo tras 5 intentos fallidos). Contraseñas con scrypt y sal; sesiones con token aleatorio, guardado solo como hash, de 30 días.
 - **Cookie de sesión:** `HttpOnly` y `SameSite=Strict`, más `Secure` con `COOKIE_SECURE=1`. Las peticiones que modifican datos exigen JSON.
 - **Login:** máximo 5 intentos fallidos por usuario e IP cada 10 minutos. Mensaje genérico y tiempo constante, para no revelar qué usuarios existen.
 - **Aislamiento:** cada usuario solo lee y escribe sus datos y sus PDF. Las rutas de archivos se validan para no salir de su carpeta.
@@ -95,7 +101,9 @@ El orden importa: primero la lista de alimentos y después la pauta. Un PDF que 
 - **Secretos:** la clave de Gemini solo vive en el servidor (`.env`, fuera del repositorio).
 - **Repositorio:** `docs/`, `server-data/` y `.env` están en `.gitignore`. Los datos de prueba del código están anonimizados.
 
-**Al desplegar:** sirve la app por HTTPS (con `COOKIE_SECURE=1`) dentro de la red privada, mantén Node actualizado y haz copia de seguridad de `SAZORA_DATA_DIR`.
+- **Red:** el servidor escucha solo en `127.0.0.1` por defecto; el acceso es a través del proxy HTTPS de la red privada.
+
+**Al desplegar:** sigue [DESPLIEGUE.md](DESPLIEGUE.md): HTTPS en la red privada con `COOKIE_SECURE=1`, servicio aislado con systemd, copia diaria y copias fuera de la VM.
 
 ## Pruebas
 
@@ -103,7 +111,7 @@ El orden importa: primero la lista de alimentos y después la pauta. Un PDF que 
 
 - **Dominio:** escalado nutricional, recetas y raciones, totales, plan frente a ingesta, nutrientes desconocidos, unidades incompatibles, objetivos no configurados, importación de lista y pauta, y dudas.
 - **Datos de prueba:** las comidas suman los totales del día y 5 platos de ejemplo cuadran exactamente con las porciones de su comida.
-- **Servidor:** sesiones, límite de intentos, aislamiento entre usuarios, conflictos de versión, importación, cabeceras y rutas.
+- **Servidor:** sesiones, registro con código de invitación, límite de intentos, aislamiento entre usuarios, conflictos de versión, importación, cabeceras y rutas.
 - **De extremo a extremo** (jsdom): primer arranque con lista → pauta, PDF combinado, planificar y registrar, reabrir conservando los datos, 404 y formularios inválidos.
 
 Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una pauta real, anonimizada. Solo se usan en las pruebas: un usuario nuevo empieza sin datos.
@@ -118,5 +126,5 @@ Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una 
 
 ## Siguientes pasos
 
-- Despliegue en la VM privada, con HTTPS y la app instalable en el móvil (PWA).
+- Desplegar en la VM privada siguiendo [DESPLIEGUE.md](DESPLIEGUE.md).
 - Asistente con IA que use el dominio como herramientas (`daySummary`, `recipePerServing`, las equivalencias de la pauta), sin poder modificar la pauta y validando sus propuestas con el motor antes de mostrarlas.
