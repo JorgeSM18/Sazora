@@ -1,0 +1,28 @@
+# Dependencias y compilación
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Secretos y configuración local (la plantilla .env.example sí se sube)
+.env
+.env.*
+!.env.example
+
+# Datos del servidor: base de datos, PDF de los usuarios, credenciales de prueba
+server-data/
+*.db
+*.db-shm
+*.db-wal
+
+# Documentos personales usados para probar la importación (contienen datos de salud)
+docs/
+
+# Herramientas y sistema
+.claude/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
