@@ -1,13 +1,13 @@
 // Rutas HTTP de Sazora. Sin dependencias; se construye con sus piezas (BD, importador, carpetas)
 // para poder probarla sin red. El arranque está en index.mjs.
 
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 
 const COOKIE = 'sazora_sesion';
 const MB = 1024 * 1024;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.json': 'application/json', '.png': 'image/png', '.woff2': 'font/woff2' };
+const TYPES = { '.webmanifest': 'application/manifest+json', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.json': 'application/json', '.png': 'image/png', '.woff2': 'font/woff2' };
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -72,9 +72,22 @@ const cookieToken = (req) =>
  * @param {string} deps.docsDir  carpeta de PDF importados (una subcarpeta por usuario)
  * @param {string} deps.distDir  web compilada
  * @param {boolean} [deps.secureCookies]
+ * @param {string} [deps.registrationCode]  código de invitación; sin él, el registro está desactivado
  */
-export function createApp({ db, importDocument, docsDir, distDir, secureCookies = false }) {
-  const attempts = new Map(); // límite de intentos de login: clave → { n, until }
+export function createApp({ db, importDocument, docsDir, distDir, secureCookies = false, registrationCode }) {
+  const attempts = new Map(); // intentos fallidos (login, registro): clave → { n, until }
+  const MAX_FAILS = 5;
+  const WINDOW = 10 * 60_000;
+  const blocked = (key, now = Date.now()) => {
+    if (attempts.size > 1000) for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
+    const a = attempts.get(key);
+    return !!a && a.n >= MAX_FAILS && a.until > now;
+  };
+  const fail = (key, now = Date.now()) => {
+    const a = attempts.get(key);
+    attempts.set(key, { n: (a && a.until > now ? a.n : 0) + 1, until: now + WINDOW });
+  };
+  const sameSecret = (a, b) => timingSafeEqual(createHash('sha256').update(String(a)).digest(), createHash('sha256').update(String(b)).digest());
   const importing = new Set(); // una importación a la vez por usuario (cada una cuesta llamadas a Gemini)
 
   const sessionCookie = (token, maxAge, req) =>
@@ -89,19 +102,41 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
   async function login(req, res) {
     const { username, password } = await readJson(req, 10_000);
     if (String(username ?? '').length > 64 || String(password ?? '').length > 256) throw new HttpError(400, 'Usuario o contraseña demasiado largos.');
-    const key = `${req.socket.remoteAddress}|${String(username).toLowerCase()}`;
-    const now = Date.now();
-    if (attempts.size > 1000) for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
-    const a = attempts.get(key);
-    if (a && a.n >= 5 && a.until > now) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos.');
+    const key = `login|${req.socket.remoteAddress}|${String(username).toLowerCase()}`;
+    if (blocked(key)) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos.');
     const user = db.authenticate(String(username ?? ''), String(password ?? ''));
     if (!user) {
-      attempts.set(key, { n: (a && a.until > now ? a.n : 0) + 1, until: now + 10 * 60_000 });
+      fail(key);
       throw new HttpError(401, 'Usuario o contraseña incorrectos.');
     }
     attempts.delete(key);
+    startSession(res, req, user, 200);
+  }
+
+  function startSession(res, req, user, status) {
     const { token, maxAge } = db.createSession(user.id);
-    send(res, 200, { user }, 'application/json', { 'set-cookie': sessionCookie(token, maxAge, req) });
+    send(res, status, { user }, 'application/json', { 'set-cookie': sessionCookie(token, maxAge, req) });
+  }
+
+  /** Alta de usuario con el código de invitación del servidor. Sin código configurado, desactivado. */
+  async function register(req, res) {
+    if (!registrationCode) throw new HttpError(403, 'El registro está desactivado. Pide que te creen el usuario en el servidor.');
+    const { username, name, password, code } = await readJson(req, 10_000);
+    if (String(name ?? '').length > 80 || String(password ?? '').length > 256 || String(code ?? '').length > 256) throw new HttpError(400, 'Algún dato es demasiado largo.');
+    const key = `registro|${req.socket.remoteAddress}`;
+    if (blocked(key)) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos.');
+    if (!sameSecret(code ?? '', registrationCode)) {
+      fail(key);
+      throw new HttpError(403, 'El código de invitación no es correcto.');
+    }
+    let user;
+    try {
+      user = db.createUser(String(username ?? '').trim(), String(name ?? '').trim(), String(password ?? ''));
+    } catch (e) {
+      throw new HttpError(String(e.message).includes('UNIQUE') ? 409 : 400, String(e.message).includes('UNIQUE') ? 'Ese usuario ya existe.' : e.message);
+    }
+    attempts.delete(key);
+    startSession(res, req, user, 201);
   }
 
   async function importPdf(req, res, user) {
@@ -148,6 +183,8 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
     const route = `${req.method} ${url.pathname}`;
     try {
       if (route === 'POST /api/sesion') return await login(req, res);
+      if (route === 'GET /api/registro') return send(res, 200, { enabled: !!registrationCode });
+      if (route === 'POST /api/registro') return await register(req, res);
       if (route === 'DELETE /api/sesion') {
         db.deleteSession(cookieToken(req));
         return send(res, 200, { ok: true }, 'application/json', { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });

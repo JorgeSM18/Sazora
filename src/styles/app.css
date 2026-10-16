@@ -277,3 +277,5 @@ a.source { text-decoration: underline; text-decoration-thickness: 1px; }
 .onboarding li.done .onboarding-mark { background: var(--color-success-soft); color: var(--color-success); }
 .onboarding li.locked { opacity: .7; }
 .welcome .btn.primary { align-self: flex-start; }
+.link-btn { border: 0; background: none; padding: 0; color: var(--color-accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.stack-sm > * + * { margin-top: var(--space-1); }

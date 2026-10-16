@@ -77,6 +77,49 @@ describe('sesiones', () => {
   });
 });
 
+describe('registro con código de invitación', () => {
+  async function withApp(registrationCode, fn) {
+    const s = createServer(createApp({ db, docsDir: join(dir, 'documentos'), distDir: join(dir, 'dist'), importDocument: async () => ({}), registrationCode }));
+    await new Promise((r) => s.listen(0, r));
+    try {
+      await fn(`http://localhost:${s.address().port}`);
+    } finally {
+      s.close();
+    }
+  }
+  const register = (url, body) => fetch(`${url}/api/registro`, json('POST', body));
+
+  it('sin código configurado, el registro está desactivado', async () => {
+    await withApp(undefined, async (url) => {
+      expect(await (await fetch(`${url}/api/registro`)).json()).toEqual({ enabled: false });
+      expect((await register(url, { username: 'x', name: 'X', password: 'contraseña-x', code: '' })).status).toBe(403);
+    });
+  });
+
+  it('con el código correcto crea la cuenta e inicia sesión', async () => {
+    await withApp('codigo-secreto-123', async (url) => {
+      expect(await (await fetch(`${url}/api/registro`)).json()).toEqual({ enabled: true });
+      const r = await register(url, { username: 'marta', name: 'Marta', password: 'contraseña-marta', code: 'codigo-secreto-123' });
+      expect(r.status).toBe(201);
+      expect((await r.json()).user).toMatchObject({ username: 'marta', name: 'Marta' });
+      const cookie = r.headers.get('set-cookie').split(';')[0];
+      expect((await fetch(`${url}/api/datos`, { headers: { cookie } })).status).toBe(200);
+      // Usuario repetido y contraseña corta: errores claros.
+      expect((await register(url, { username: 'marta', name: 'M', password: 'contraseña-2', code: 'codigo-secreto-123' })).status).toBe(409);
+      expect(await (await register(url, { username: 'otra', name: 'O', password: 'corta', code: 'codigo-secreto-123' })).json()).toMatchObject({ error: expect.stringMatching(/8 caracteres/) });
+    });
+  });
+
+  it('un código incorrecto no crea nada y se bloquea tras varios intentos', async () => {
+    await withApp('codigo-secreto-123', async (url) => {
+      const bad = { username: 'intruso', name: 'I', password: 'contraseña-i', code: 'adivina' };
+      for (let i = 0; i < 5; i++) expect((await register(url, bad)).status).toBe(403);
+      expect((await register(url, bad)).status).toBe(429);
+      expect(db.listUsers().some((u) => u.username === 'intruso')).toBe(false);
+    });
+  });
+});
+
 describe('datos por usuario', () => {
   it('cada usuario tiene los suyos y los conflictos entre dispositivos no se pisan', async () => {
     const ana = (await login('ana', 'contraseña-ana')).cookie;
