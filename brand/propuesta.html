@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sazora — Propuesta de marca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Geist:wght@400;500;600&family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#FBFBFA; --ink:#1B1A17; --ink2:#5E5B55; --line:#E3E1DC; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--paper); color:var(--ink); font:16px/1.55 Inter, system-ui, sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:48px 16px 96px; }
+  h1 { font:700 44px/1.05 "Bricolage Grotesque"; letter-spacing:-.02em; }
+  h2 { font:700 28px/1.1 "Bricolage Grotesque"; margin:72px 0 8px; padding-top:24px; border-top:2px solid var(--ink); }
+  h3 { font:600 19px/1.25 "Bricolage Grotesque"; margin-bottom:6px; }
+  p, li { color:var(--ink2); max-width:68ch; }
+  .lede { font-size:19px; margin-top:12px; }
+  .kicker { font:500 12px "IBM Plex Mono"; letter-spacing:.08em; text-transform:uppercase; color:var(--ink2); }
+  .grid { display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); margin-top:28px; }
+  .card { border:1px solid var(--line); border-radius:6px; background:#fff; padding:24px; }
+  .card.rec { border:2px solid var(--ink); }
+  .tag { display:inline-block; font:500 11px "IBM Plex Mono"; text-transform:uppercase; letter-spacing:.06em; background:var(--ink); color:#fff; padding:3px 8px; border-radius:3px; margin-bottom:12px; }
+  .principles { display:grid; gap:16px 32px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); margin-top:24px; }
+  .principles b { display:block; color:var(--ink); font-weight:600; }
+
+  /* Logo */
+  .stage { display:flex; align-items:center; justify-content:center; gap:20px; height:180px; border-radius:4px; background:var(--paper); margin-bottom:16px; }
+  .stage svg.sym { width:96px; height:96px; }
+  .stage svg.word { height:30px; }
+  .sizes { display:flex; align-items:end; gap:14px; padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:16px 0; }
+  .sizes span { font:500 10px "IBM Plex Mono"; color:var(--ink2); display:block; text-align:center; margin-top:4px; }
+  .icons { display:flex; gap:12px; flex-wrap:wrap; }
+  .icon { width:64px; height:64px; border-radius:15px; display:grid; place-items:center; }
+  .icon svg { width:40px; height:40px; }
+  .lockup-h { display:flex; align-items:center; gap:10px; margin:14px 0; }
+  .lockup-h svg.sym { width:34px; height:34px; } .lockup-h svg.word { height:20px; }
+  .meta { font-size:14px; margin-top:12px; }
+  .meta li { margin:2px 0 2px 18px; }
+
+  /* Direcciones */
+  .dir { display:grid; grid-template-columns: 330px 1fr; gap:40px; margin-top:36px; padding:28px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  .dir.rec { border:2px solid var(--ink); }
+  @media (max-width:820px){ .dir{ grid-template-columns:1fr; } }
+  .swatches { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin:16px 0; }
+  .sw { border:1px solid var(--line); border-radius:4px; overflow:hidden; font:500 11px/1.35 "IBM Plex Mono"; }
+  .sw i { display:block; height:44px; }
+  .sw div { padding:6px 8px; color:var(--ink); }
+  .sw small { color:var(--ink2); display:block; }
+  .contrast { font:500 12px "IBM Plex Mono"; width:100%; border-collapse:collapse; margin-top:8px; }
+  .contrast td { padding:4px 6px; border-bottom:1px solid var(--line); }
+  .ok { color:#2F7A3E; } .ko { color:#B42318; }
+  .typespec { margin-top:16px; padding:14px; background:var(--paper); border-radius:4px; }
+
+  /* Mockup (tema vía variables) */
+  .phone { width:330px; height:680px; border-radius:36px; border:10px solid #111; overflow:hidden; position:relative;
+           background:var(--bg); color:var(--ink); font-family:var(--ui); display:flex; flex-direction:column; justify-self:center; }
+  .phone .scroll { flex:1; overflow:auto; padding:18px 18px 8px; }
+  .ph-top { display:flex; justify-content:space-between; align-items:center; }
+  .ph-top .brand { display:flex; align-items:center; gap:7px; color:var(--ink); }
+  .ph-top .brand svg.sym { width:22px; height:22px; } .ph-top .brand svg.word { height:17px; }
+  .ph-date { font:500 12px var(--ui); color:var(--ink2); }
+  .ph-h { font-family:var(--display); font-weight:var(--dw); font-size:30px; line-height:1.05; letter-spacing:-.015em; margin:22px 0 4px; }
+  .ph-sub { font-size:13px; color:var(--ink2); }
+  .meal { border-top:1px solid var(--line); padding:13px 0; display:grid; grid-template-columns:62px 1fr; gap:10px; }
+  .meal:first-of-type { margin-top:18px; }
+  .meal .when { font:500 11px/1.3 var(--num); text-transform:uppercase; letter-spacing:.05em; color:var(--ink2); padding-top:3px; }
+  .meal .dish { font-weight:600; font-size:15px; line-height:1.3; }
+  .meal.now .dish { color:var(--ink); }
+  .meal.now .when { color:var(--accent); }
+  .pauta { display:inline-flex; gap:6px; align-items:baseline; margin-top:5px; font-size:12px; color:var(--pauta); }
+  .pauta b { font:500 12px var(--num); font-variant-numeric:tabular-nums; }
+  .pauta::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--pauta); flex:none; transform:translateY(-1px); }
+  .actions { display:flex; gap:8px; margin-top:6px; }
+  .btn { font:600 13px var(--ui); border-radius:var(--r); padding:9px 12px; border:1px solid var(--line); background:var(--surface); color:var(--ink); }
+  .btn.pri { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+  .quick { margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .quick div { background:var(--surface2); border-radius:var(--r); padding:12px; font-size:13px; font-weight:600; line-height:1.3; }
+  .quick small { display:block; font-weight:400; color:var(--ink2); margin-top:3px; font-size:11.5px; }
+  .ask { margin:8px 12px; display:flex; align-items:center; gap:8px; border:1.5px solid var(--ink); border-radius:var(--r); padding:10px 12px; font-size:13px; color:var(--ink2); background:var(--surface); }
+  .ask svg { width:16px; height:16px; color:var(--accent); flex:none; }
+  .nav { display:grid; grid-template-columns:repeat(5,1fr); border-top:1px solid var(--line); padding:8px 4px 14px; background:var(--bg); }
+  .nav span { font-size:10.5px; text-align:center; color:var(--ink2); display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .nav span::before { content:""; width:18px; height:18px; border:1.75px solid currentColor; border-radius:5px; }
+  .nav span.on { color:var(--ink); font-weight:600; }
+  .nav span.on::before { background:var(--accent); border-color:var(--accent); }
+  .eg { position:absolute; top:3px; left:50%; transform:translateX(-50%); font:500 9px "IBM Plex Mono"; color:var(--ink2); opacity:.7; }
+
+  .t-pim { --bg:#FBFBFA; --surface:#FFFFFF; --surface2:#F1F0EC; --ink:#1B1A17; --ink2:#5E5B55; --line:#E3E1DC;
+           --accent:#C23B1E; --on-accent:#FFFFFF; --pauta:#1F4A8A;
+           --display:"Bricolage Grotesque"; --dw:700; --ui:Inter; --num:Inter; --r:6px; }
+  .t-saf { --bg:#141412; --surface:#1E1D1A; --surface2:#262521; --ink:#F2EFE8; --ink2:#A9A49A; --line:#35332E;
+           --accent:#E8A33D; --on-accent:#141412; --pauta:#9DB8E8;
+           --display:Newsreader; --dw:600; --ui:Geist; --num:Geist; --r:4px; }
+  .t-rem { --bg:#F4F5F4; --surface:#FFFFFF; --surface2:#E9ECEB; --ink:#202425; --ink2:#5A6163; --line:#D7DCDB;
+           --accent:#9E1F55; --on-accent:#FFFFFF; --pauta:#2B5F5A;
+           --display:"Familjen Grotesk"; --dw:700; --ui:"IBM Plex Sans"; --num:"IBM Plex Mono"; --r:2px; }
+  .choose { margin-top:72px; padding:28px; background:var(--ink); color:#fff; border-radius:6px; }
+  .choose p { color:#cfccc5; }
+</style>
+</head>
+<body>
+
+<!-- Símbolos y wordmark: una sola fuente, reutilizada con <use> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A · Pizca -->
+    <symbol id="sym-a" viewBox="0 0 48 48">
+      <path d="M30.93 12 A8 8 0 1 0 24 24 A8 8 0 1 1 17.07 36" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="35.5" cy="5.5" r="3.5" fill="currentColor"/>
+    </symbol>
+    <!-- B · Tapa y cuenco -->
+    <symbol id="sym-b" viewBox="0 0 48 48">
+      <path d="M12 22 A15 15 0 0 1 42 22 Z" fill="currentColor"/>
+      <path d="M6 26 A15 15 0 0 0 36 26 Z" fill="currentColor"/>
+    </symbol>
+    <!-- C · Lo justo -->
+    <symbol id="sym-c" viewBox="0 0 48 48">
+      <path d="M10 10 V26 A14 14 0 0 0 38 26 V10" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+      <path d="M4 20 H29" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+    </symbol>
+    <!-- Wordmark construido: x-height 32, trazo 6, terminales redondos -->
+    <symbol id="word" viewBox="-3 -3 211 38">
+      <g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15.98 5.32 A6.5 6.5 0 1 0 11 16 A6.5 6.5 0 1 1 6.02 26.68"/>
+        <g transform="translate(29 0)"><circle cx="16" cy="16" r="13"/><path d="M29 3 V29"/></g>
+        <g transform="translate(70 0)"><path d="M3 3 H27 L3 29 H27"/></g>
+        <g transform="translate(104 0)"><circle cx="16" cy="16" r="13"/></g>
+        <g transform="translate(144 0)"><path d="M3 3 V29 M3 16 C3 8 8 3 16 3 H20"/></g>
+        <g transform="translate(171 0)"><circle cx="16" cy="16" r="13"/><path d="M29 3 V29"/></g>
+      </g>
+    </symbol>
+    <!-- Logotipo final: la S del símbolo A es la primera letra. --sz-s colorea la s y su pizca -->
+    <symbol id="logotype" viewBox="0 -4 205 37">
+      <path d="M16.63 6.25A6.5 6.5 0 1 0 11 16a6.5 6.5 0 1 1-5.63 9.75" fill="none" stroke="var(--sz-s, currentColor)" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="20.9" cy="0.1" r="3.2" fill="var(--sz-s, currentColor)"/>
+      <g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><circle cx="45" cy="16" r="13"/><path d="M58 3v26M73 3h24L73 29h24"/><circle cx="120" cy="16" r="13"/><path d="M147 3v26m0-13c0-8 5-13 13-13h4"/><circle cx="187" cy="16" r="13"/><path d="M200 3v26"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<main>
+  <p class="kicker">Sazora · Fase 1 · Propuesta para elegir</p>
+  <h1>Cocina de diario,<br>con la medida exacta.</h1>
+  <p class="lede">Sazora no es una app de nutrición: es el cuaderno de cocina que convierte la pauta de tu nutricionista en platos que apetecen. La dieta es la fuente de verdad; Sazora pone el sabor.</p>
+
+  <h2>A · Dirección de marca</h2>
+  <p>Exploré cuatro territorios: <b>bienestar natural</b> (salvia, beige, hojas — es exactamente lo que hacen todas), <b>fitness/tracker</b> (anillos, macros, verde lima — contradice el producto: no contamos calorías), <b>tech-IA</b> (degradados, destellos — la IA no es el protagonista) y <b>cuaderno editorial de cocina</b>. Elijo el último: el lenguaje de las revistas culinarias y del diseño suizo — retícula clara, tipografía con carácter, mucho aire, color usado como señal — porque es el único que transmite a la vez <i>precisión</i> (respetar cantidades) y <i>apetito</i> (cocinar con gusto).</p>
+  <div class="principles">
+    <div><b>Personalidad</b>Una cocinera experta y tranquila a tu lado. Precisa con las medidas, generosa con las ideas. Nunca sermonea.</div>
+    <div><b>Al abrirla</b>“Ya sé qué voy a comer hoy.” Calma, orden, ganas de cocinar. Cero culpa, cero métricas.</div>
+    <div><b>Diferenciación</b>Sin anillos de progreso, sin gráficos, sin mascotas. Retícula editorial, dos voces de color (cocina vs. pauta) y un asistente que es una línea de texto, no un chat flotante.</div>
+    <div><b>Clichés vetados</b>Hojitas, tenedor+cuchillo, manzana, aguacate, salvia-beige, degradado morado, glassmorphism, sombras difusas, emojis de comida, destellos “✨IA”.</div>
+    <div><b>Contexto de uso</b>De pie en la cocina, manos ocupadas, móvil apoyado: textos grandes, cantidades legibles a un metro, objetivos táctiles de 44px+.</div>
+    <div><b>Idea central del sistema</b>Dos voces de color: <b>la de tu nutricionista</b> (lo que no se toca) y <b>la de la cocina</b> (lo que puedes decidir). El usuario siempre sabe qué es pauta y qué es sugerencia.</div>
+  </div>
+
+  <h2>B · Logotipo — elegido: A · Pizca</h2>
+  <p>Decisión final: la S del símbolo pasa a ser la primera letra de la palabra (<b>[S]azora</b>), así no se repite la S junto al nombre. El sistema queda en dos piezas: la palabra con la pizca y la pizca sola (icono, favicon). Símbolo y logotipo nunca van juntos.</p>
+  <div class="card rec" style="margin-top:28px">
+    <span class="tag">Logotipo final</span>
+    <div class="stage" style="color:#1B1A17;--sz-s:#C23B1E;height:200px"><svg viewBox="0 0 205 37" style="height:64px" role="img" aria-label="Sazora"><use href="#logotype"/></svg></div>
+    <div class="icons" style="align-items:center">
+      <div class="icon" style="background:#FBFBFA;width:auto;padding:0 20px;border:1px solid #E3E1DC;color:#1B1A17"><svg viewBox="0 0 205 37" style="width:130px;height:24px"><use href="#logotype"/></svg></div>
+      <div class="icon" style="background:#1B1A17;width:auto;padding:0 20px;color:#FBFBFA"><svg viewBox="0 0 205 37" style="width:130px;height:24px"><use href="#logotype"/></svg></div>
+      <div class="icon" style="background:#C23B1E;color:#FFF"><svg viewBox="0 0 48 48"><use href="#sym-a"/></svg></div>
+      <div class="sizes" style="border:0;margin:0;color:#1B1A17;--sz-s:#C23B1E"><div><svg viewBox="0 0 205 37" style="width:80px;height:15px"><use href="#logotype"/></svg><span>80 px (mín.)</span></div><div><svg style="width:16px;height:16px;color:#C23B1E"><use href="#sym-a"/></svg><span>16 px</span></div></div>
+    </div>
+    <ul class="meta"><li><b>Construcción:</b> la s usa los mismos arcos de 230° que el símbolo, redibujada a altura x (r6.5, trazo 6, igual que el resto de letras). Punto r3.2 en la misma dirección que en el símbolo, separado ~1.3 u del terminal para que no se funda a tamaños pequeños.</li><li>Archivos: <code>logo/sazora-horizontal-{color,mono,inverso}.svg</code>, <code>logo/sazora-simbolo*.svg</code>, <code>app-icon.svg</code>, <code>favicon.svg</code>.</li></ul>
+  </div>
+  <h3 style="margin-top:40px">Exploración inicial</h3>
+  <p>Los tres conceptos tal como se presentaron, con el símbolo junto al nombre.</p>
+  <div class="grid" id="logos"></div>
+
+  <h2>C+D · Sistema visual — elige una dirección</h2>
+  <p>Mismo contenido, misma estructura, tres personalidades. La pantalla es el Inicio: el día según tu pauta, sin métricas. Las cantidades en <span style="color:#1F4A8A">azul</span> (o su equivalente) son siempre la voz de tu nutricionista. Contrastes calculados en vivo con la fórmula WCAG 2.2.</p>
+  <div id="dirs"></div>
+
+  <div class="choose">
+    <h3>Decisión: logo A · Pizca integrado + dirección 1 · Pimentón y cerámica</h3>
+    <p>Entregado en <code>brand/</code>: los SVG del logo en <code>logo/</code>, los tokens de diseño en <code>tokens.css</code> y las reglas de uso en <code>README.md</code>.</p>
+  </div>
+</main>
+
+<template id="phone">
+  <div class="phone">
+    <span class="eg">DATOS DE EJEMPLO</span>
+    <div class="scroll">
+      <div class="ph-top">
+        <span class="brand"><svg class="word" viewBox="0 0 205 37" style="--sz-s:var(--accent)" role="img" aria-label="Sazora"><use href="#logotype"/></svg></span>
+        <span class="ph-date">mié 15 oct</span>
+      </div>
+      <div class="ph-h">Hoy comes<br>lentejas con calabaza</div>
+      <div class="ph-sub">Comida · Te quedan 2 platos por decidir</div>
+      <div class="meal"><span class="when">Desayuno</span><div><div class="dish">Tostada de centeno con tomate y huevo</div><span class="pauta">Pauta: <b>60 g pan · 1 huevo</b></span></div></div>
+      <div class="meal now"><span class="when">Comida<br>ahora</span><div><div class="dish">Lentejas guisadas con calabaza y comino</div><span class="pauta">Pauta: <b>70 g legumbre en crudo</b></span>
+        <div class="actions"><span class="btn pri">Ver receta</span><span class="btn">Cambiar</span></div></div></div>
+      <div class="meal"><span class="when">Cena</span><div><div class="dish" style="color:var(--ink2);font-weight:500">Sin decidir</div><span class="pauta">Pauta: <b>proteína + verdura</b></span></div></div>
+      <div class="quick">
+        <div>Cocinar con lo que tengo<small>Dime qué hay en la nevera</small></div>
+        <div>Lista de la compra<small>7 cosas pendientes</small></div>
+      </div>
+    </div>
+    <div class="ask"><svg viewBox="0 0 16 16"><path d="M2 8h9M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Pregunta sobre tu dieta…</div>
+    <div class="nav"><span class="on">Inicio</span><span>Mi dieta</span><span>Recetas</span><span>Plan</span><span>Compra</span></div>
+  </div>
+</template>
+
+<script>
+const LOGOS = [
+  { id:'a', name:'A · Pizca', color:'#C23B1E', rec:true,
+    idea:'Una S hecha de dos arcos —el gesto de remover— y un punto que cae: la pizca de sal. Sazonar es la raíz del nombre.',
+    build:'Dos círculos r8 apilados (Ø16+16 = 32), arco de 230° cada uno, trazo 7, terminal redondo. Punto r3.5 alineado a la tangente del arco superior.',
+    pros:'Muy ligado al nombre y al wordmark (misma s). Contra: las S con punto existen en otras marcas; menos masa a 16 px.' },
+  { id:'b', name:'B · Tapa y cuenco', color:'#C23B1E',
+    idea:'Dos semicírculos desplazados: la tapa y el cuenco, el antes y el después de cocinar. El desfase sugiere movimiento y, de reojo, una S.',
+    build:'Dos medios discos r15 idénticos, separación vertical 4 (⅔ del trazo del wordmark), desplazamiento horizontal 6 = 2/5 del radio. Centro óptico en 24,24.',
+    pros:'Silueta sólida: la más fuerte a 16 px y como icono. Funciona sin nombre. Da un recurso gráfico a la UI (máscaras de foto en medio disco, separadores). Era mi recomendación inicial.' },
+  { id:'c', name:'C · Lo justo', color:'#C23B1E',
+    idea:'Un recipiente con su línea de nivel que sobresale como marca de medida: la cantidad exacta de tu pauta, ni más ni menos.',
+    build:'U de 28 de ancho con fondo r14, trazo 6. Línea de nivel a 1/3 de altura, nace fuera de la pared izquierda (marca de medida) y se detiene antes de la derecha.',
+    pros:'El concepto más fiel a la promesa (respetar cantidades). Contra: a 16 px puede leerse como una taza o un icono de base de datos.' },
+];
+const sym = (id, cls='sym') => `<svg class="${cls}"><use href="#sym-${id}"/></svg>`;
+const word = `<svg class="word" viewBox="-3 -3 211 38"><use href="#word"/></svg>`;
+document.getElementById('logos').innerHTML = LOGOS.map(l => `
+  <div class="card ${l.rec?'rec':''}">
+    ${l.rec?'<span class="tag">Elegido</span>':''}
+    <div class="stage" style="color:#1B1A17">${sym(l.id)}</div>
+    <h3>${l.name}</h3><p>${l.idea}</p>
+    <div class="lockup-h" style="color:#1B1A17">${sym(l.id)}${word}</div>
+    <div class="lockup-h" style="color:${l.color}">${sym(l.id)}<span style="color:#1B1A17;display:contents">${word}</span></div>
+    <div class="sizes" style="color:#1B1A17">
+      ${[16,24,32,48].map(s=>`<div><svg style="width:${s}px;height:${s}px"><use href="#sym-${l.id}"/></svg><span>${s}px</span></div>`).join('')}
+    </div>
+    <div class="icons">
+      <div class="icon" style="background:#C23B1E;color:#FFF">${sym(l.id)}</div>
+      <div class="icon" style="background:#1B1A17;color:#FBFBFA">${sym(l.id)}</div>
+      <div class="icon" style="background:#FFF;color:#1B1A17;border:1px solid #E3E1DC">${sym(l.id)}</div>
+      <div class="icon" style="background:#141412;color:#E8A33D">${sym(l.id)}</div>
+    </div>
+    <ul class="meta"><li><b>Construcción:</b> ${l.build}</li><li>${l.pros}</li></ul>
+  </div>`).join('');
+
+const DIRS = [
+  { cls:'t-pim', n:'1 · Pimentón y cerámica', rec:true,
+    why:'Base de papel casi blanco y tinta carbón (editorial, legible al sol de la cocina). Un único acento cálido —pimentón— para las acciones, y el azul de la cerámica tradicional como voz de la pauta. Rojo-naranja abre el apetito; el azul aporta confianza y casi no existe en apps de comida, así que la “voz del nutricionista” se reconoce al instante.',
+    type:['Bricolage Grotesque — marca y titulares (contrastes ópticos, trazo con tinta: calidez de imprenta)','Inter — interfaz y cantidades (cifras tabulares, máxima legibilidad)'],
+    sw:[['Fondo','#FBFBFA'],['Superficie','#FFFFFF'],['Superficie 2','#F1F0EC'],['Texto','#1B1A17'],['Texto 2','#5E5B55'],['Borde','#E3E1DC'],['Marca / acento · Pimentón','#C23B1E'],['Secundario · Pauta (cerámica)','#1F4A8A'],['Éxito','#2F7A3E'],['Aviso','#9A5B00'],['Error · Granate','#9B1C31']],
+    pairs:[['#1B1A17','#FBFBFA','Texto / fondo'],['#5E5B55','#FBFBFA','Texto 2 / fondo'],['#5E5B55','#F1F0EC','Texto 2 / sup. 2'],['#FFFFFF','#C23B1E','Botón primario'],['#C23B1E','#FBFBFA','Acento como texto'],['#1F4A8A','#FBFBFA','Pauta / fondo'],['#2F7A3E','#FFFFFF','Éxito'],['#9A5B00','#FFFFFF','Aviso'],['#9B1C31','#FFFFFF','Error'],['#C23B1E','#FBFBFA','Foco/UI (≥3:1)',3]],
+    note:'Riesgo controlado: pimentón y error son ambos cálidos; el error usa granate + icono + texto, nunca solo color.' },
+  { cls:'t-saf', n:'2 · Azafrán nocturno',
+    why:'Modo oscuro como identidad: carbón cálido con acento azafrán. Muy distintivo y “de restaurante”. Contra: un fondo oscuro todo el día cansa, las fotos de comida se ven pesadas y es peor para leer en una cocina luminosa. Mejor como modo oscuro de la dirección 1 que como marca.',
+    type:['Newsreader — titulares (serif editorial de revista culinaria)','Geist — interfaz (precisa, neutra, moderna)'],
+    sw:[['Fondo','#141412'],['Superficie','#1E1D1A'],['Superficie 2','#262521'],['Texto','#F2EFE8'],['Texto 2','#A9A49A'],['Borde','#35332E'],['Marca / acento · Azafrán','#E8A33D'],['Secundario · Pauta','#9DB8E8'],['Éxito','#6FCF8E'],['Aviso','#F0C04A'],['Error','#F2785C']],
+    pairs:[['#F2EFE8','#141412','Texto / fondo'],['#A9A49A','#141412','Texto 2 / fondo'],['#A9A49A','#262521','Texto 2 / sup. 2'],['#141412','#E8A33D','Botón primario'],['#E8A33D','#141412','Acento como texto'],['#9DB8E8','#141412','Pauta / fondo'],['#6FCF8E','#1E1D1A','Éxito'],['#F0C04A','#1E1D1A','Aviso'],['#F2785C','#1E1D1A','Error']],
+    note:'Aviso y acento comparten familia: habría que separar más el amarillo.' },
+  { cls:'t-rem', n:'3 · Remolacha y grafito',
+    why:'Gris mineral frío con acento remolacha y verde petróleo para la pauta. Elegante, sobria, muy poco vista en comida. Contra: más fría y “de diseño”; la remolacha a veces se lee como marca de moda o de vinos. Radios casi rectos y cantidades en monoespaciada: precisión máxima, calidez mínima.',
+    type:['Familjen Grotesk — titulares (grotesca con carácter)','IBM Plex Sans + Plex Mono — interfaz y cantidades'],
+    sw:[['Fondo','#F4F5F4'],['Superficie','#FFFFFF'],['Superficie 2','#E9ECEB'],['Texto','#202425'],['Texto 2','#5A6163'],['Borde','#D7DCDB'],['Marca / acento · Remolacha','#9E1F55'],['Secundario · Pauta','#2B5F5A'],['Éxito','#2D7A3F'],['Aviso','#9A5B00'],['Error','#C0312B']],
+    pairs:[['#202425','#F4F5F4','Texto / fondo'],['#5A6163','#F4F5F4','Texto 2 / fondo'],['#5A6163','#E9ECEB','Texto 2 / sup. 2'],['#FFFFFF','#9E1F55','Botón primario'],['#9E1F55','#F4F5F4','Acento como texto'],['#2B5F5A','#F4F5F4','Pauta / fondo'],['#2D7A3F','#FFFFFF','Éxito'],['#9A5B00','#FFFFFF','Aviso'],['#C0312B','#FFFFFF','Error']],
+    note:'' },
+];
+// Contraste WCAG 2.x
+const lum = h => { const c=[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4); return .2126*c[0]+.7152*c[1]+.0722*c[2]; };
+const ratio = (a,b) => { const [x,y]=[lum(a),lum(b)].sort((m,n)=>n-m); return (x+.05)/(y+.05); };
+const tpl = document.getElementById('phone').innerHTML;
+document.getElementById('dirs').innerHTML = DIRS.map(d => `
+  <section class="dir ${d.rec?'rec':''}">
+    <div class="${d.cls}" style="display:grid">${tpl}</div>
+    <div>
+      ${d.rec?'<span class="tag">Elegida</span>':''}
+      <h3 style="font-size:24px">${d.n}</h3>
+      <p>${d.why}</p>
+      <div class="swatches">${d.sw.map(([n,h])=>`<div class="sw"><i style="background:${h}"></i><div>${h}<small>${n}</small></div></div>`).join('')}</div>
+      <div class="typespec">${d.type.map(t=>`<div style="font-size:14px">${t}</div>`).join('')}</div>
+      <table class="contrast">${d.pairs.map(([f,b,l,min=4.5])=>{const r=ratio(f,b);return `<tr><td><span style="background:${b};color:${f};padding:1px 6px;border:1px solid #ddd">Aa</span></td><td>${l}</td><td>${r.toFixed(2)}:1</td><td class="${r>=min?'ok':'ko'}">${r>=min?'AA ✓':'✗'}${min===3?' (no texto)':''}</td></tr>`}).join('')}</table>
+      ${d.note?`<p style="font-size:13px;margin-top:10px">${d.note}</p>`:''}
+    </div>
+  </section>`).join('');
+</script>
+</body>
+</html>
