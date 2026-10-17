@@ -100,6 +100,7 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
     return readBase64(file).then(
       (pdfBase64) =>
         new Promise((resolve, reject) => {
+          if (!batch.current) return reject(new Error('cancelado')); // se canceló mientras se leía el archivo
           const req = new XMLHttpRequest();
           xhr.current = req;
           req.open('POST', '/api/importar');
@@ -114,6 +115,12 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
         }),
       (e: Error) => ({ status: 0, body: { error: e.message } }),
     );
+  }
+
+  function cancel() {
+    batch.current = null;
+    xhr.current?.abort();
+    setPhase({ step: 'elegir' });
   }
 
   function start(files: File[]) {
@@ -231,7 +238,7 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
         </section>
       )}
 
-      {(phase.step === 'subiendo' || phase.step === 'analizando') && <Progress phase={phase} onCancel={() => xhr.current?.abort()} />}
+      {(phase.step === 'subiendo' || phase.step === 'analizando') && <Progress phase={phase} onCancel={cancel} />}
 
       {phase.step === 'revisar' && (
         <Review
@@ -288,7 +295,9 @@ function Progress({ phase, onCancel }: { phase: Extract<Phase, { step: 'subiendo
       <ol className="steps-progress">
         {steps.map((s, k) => <li key={s} className={k < current ? 'done' : k === current ? 'now' : ''}>{s}</li>)}
       </ol>
-      <button className="btn ghost" onClick={onCancel}>Cancelar</button>
+      <div>
+        <button className="btn" onClick={onCancel}>Cancelar</button>
+      </div>
     </section>
   );
 }
