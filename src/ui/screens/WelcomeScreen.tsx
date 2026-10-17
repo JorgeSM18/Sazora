@@ -1,6 +1,7 @@
 // Primer arranque: sin pauta. Guía para subir primero la lista de alimentos y después la pauta.
 
 import { currentListDocId } from '../../domain/importFoodList';
+import { currentDoc } from '../../domain/importGuides';
 import { useStore } from '../../state/store';
 import { Icon } from '../components/Icon';
 import { href } from '../router';
@@ -44,6 +45,25 @@ export function WelcomeScreen() {
           </div>
         </li>
       </ol>
+
+      <section className="stack" aria-labelledby="h-guias-opc">
+        <h2 id="h-guias-opc" className="sub">Guías opcionales</h2>
+        <ul className="onboarding">
+          {([['conversion', 'De crudo a cocido', 'Cuánto pesa cocinada cada porción, para poder pesar ya cocinado.'], ['productos', 'Productos recomendados', 'Los productos de cada supermercado con sus porciones.']] as const).map(([kind, title, text]) => {
+            const doc = currentDoc(data, kind);
+            return (
+              <li key={kind} className={doc ? 'done' : ''}>
+                <span className="onboarding-mark" aria-hidden="true">{doc ? <Icon name="check" size={18} /> : '+'}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p className="muted">{doc ? `${doc.title}: guardada.` : text}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="muted small">Se suben con el mismo botón, en cualquier momento. Las encontrarás en Mi dieta → Guías.</p>
+      </section>
 
       <div className="stack">
         <a className="btn primary" href={href('/dieta/importar')}>

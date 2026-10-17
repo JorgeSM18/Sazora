@@ -11,6 +11,8 @@ import { FoodsScreen } from './ui/screens/FoodsScreen';
 import { FoodEditor } from './ui/screens/FoodEditor';
 import { NotFound } from './ui/screens/NotFound';
 import { WelcomeScreen } from './ui/screens/WelcomeScreen';
+import { GuideRoute } from './ui/screens/GuidesScreen';
+import { ShoppingScreen } from './ui/screens/ShoppingScreen';
 import { useStore } from './state/store';
 
 export function App() {
@@ -26,6 +28,8 @@ export function App() {
   if (atRoot && rest.length === 0 && !data.diet) {
     // Sin pauta todavía: solo se puede importar o consultar alimentos; el resto lleva a la bienvenida.
     if (section === 'dieta' && id === 'importar' && !action) screen = <ImportScreen />;
+    else if (section === 'guias' && !action) screen = <GuideRoute id={id} />;
+    else if (section === 'compra' && !id) screen = <ShoppingScreen />;
     else if (section === 'alimentos' && !id) screen = <FoodsScreen />;
     else if (section === 'alimentos' && id && !action) screen = <FoodEditor foodId={id === 'nuevo' ? undefined : id} />;
     else if (['inicio', 'dieta', 'plan', 'recetas'].includes(section)) screen = <WelcomeScreen />;
@@ -33,6 +37,8 @@ export function App() {
     if (section === 'inicio' && !id) screen = <HomeScreen dateParam={date} />;
     else if (section === 'dieta' && !id) screen = <DietScreen />;
     else if (section === 'dieta' && id === 'importar' && !action) screen = <ImportScreen />;
+    else if (section === 'guias' && !action) screen = <GuideRoute id={id} />;
+    else if (section === 'compra' && !id) screen = <ShoppingScreen />;
     else if (section === 'plan' && !id) screen = <PlannerScreen dateParam={date} />;
     else if (section === 'recetas' && !id) screen = <RecipesScreen />;
     else if (section === 'recetas' && id === 'nueva' && !action) screen = <RecipeEditor />;

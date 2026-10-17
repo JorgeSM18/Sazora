@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildListRequest, buildPlanRequest, generate, GROUPS, importDocument, LIST_SCHEMA, listCatalog, parseResponse, PLAN_SCHEMA, slug } from './gemini.mjs';
+import { buildConversionRequest, buildListRequest, buildPlanRequest, buildProductsRequest, CONVERSION_SCHEMA, generate, GROUPS, importDocument, LIST_SCHEMA, listCatalog, parseResponse, PLAN_SCHEMA, PRODUCTS_SCHEMA, slug } from './gemini.mjs';
 
 const output = (obj) => ({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(obj) }] }] });
 const reply = (status, body) => ({ ok: status === 200, status, statusText: '', json: async () => body });
@@ -29,7 +29,10 @@ describe('peticiones', () => {
   it('lista: clasifica y usa su propio esquema', () => {
     const body = buildListRequest({ pdfBase64: 'QUJD', model: 'm' });
     expect(body.response_format.schema).toBe(LIST_SCHEMA);
-    expect(LIST_SCHEMA.properties.kind.enum).toEqual(['lista', 'pauta', 'ambos', 'otro']);
+    expect(LIST_SCHEMA.properties.contains.required).toEqual(['lista', 'pauta', 'conversion', 'productos']);
+    expect(buildConversionRequest({ pdfBase64: 'x', catalog: [{ id: 'arroz', name: 'Arroz' }], model: 'm' }).response_format.schema).toBe(CONVERSION_SCHEMA);
+    expect(buildConversionRequest({ pdfBase64: 'x', catalog: [{ id: 'arroz', name: 'Arroz' }], model: 'm' }).input[1].text).toContain('arroz: Arroz');
+    expect(buildProductsRequest({ pdfBase64: 'x', model: 'm' }).response_format.schema).toBe(PRODUCTS_SCHEMA);
     expect(PLAN_SCHEMA.properties.daily_totals.required).toEqual(GROUPS);
   });
 
@@ -83,31 +86,44 @@ describe('reintentos y modelos de reserva', () => {
 
 describe('importar un documento', () => {
   const list = { title: 'Lista', author: null, version: null, groups: [{ group: 'carbohidratos', title: 'Carbohidratos', page: 2, note: null, items: [{ name: 'Arroz', amount: 20, unit: 'g' }] }], doubts: [] };
+  const has = (o) => ({ lista: false, pauta: false, conversion: false, productos: false, ...o });
 
   it('solo lista: una única llamada', async () => {
-    const f = fakeFetch([reply(200, output({ kind: 'lista', food_list: list }))]);
+    const f = fakeFetch([reply(200, output({ contains: has({ lista: true }), food_list: list }))]);
     const r = await importDocument({ pdfBase64: 'x', catalog: [], ...opts(f.fetchImpl) });
-    expect(r).toMatchObject({ kind: 'lista', foodList: list, plan: null });
+    expect(r).toMatchObject({ contains: has({ lista: true }), foodList: list, plan: null, conversion: null, products: null });
     expect(f.sent).toHaveLength(1);
   });
 
   it('PDF con lista y pauta: la pauta se lee con los alimentos de esa lista en el catálogo', async () => {
-    const f = fakeFetch([reply(200, output({ kind: 'ambos', food_list: list })), reply(200, output({ plan_name: 'P' }))]);
+    const f = fakeFetch([reply(200, output({ contains: has({ lista: true, pauta: true }), food_list: list })), reply(200, output({ plan_name: 'P' }))]);
     const r = await importDocument({ pdfBase64: 'x', catalog: [{ id: 'huevo', name: 'Huevo' }], ...opts(f.fetchImpl) });
-    expect(r).toMatchObject({ kind: 'ambos', foodList: list, plan: { plan_name: 'P' } });
+    expect(r).toMatchObject({ foodList: list, plan: { plan_name: 'P' } });
     expect(f.sent[1].input[1].text).toContain('huevo: Huevo');
     expect(f.sent[1].input[1].text).toContain('arroz: Arroz');
   });
 
+  it('crudo a cocido y productos: una lectura por parte, con su esquema', async () => {
+    const f = fakeFetch([
+      reply(200, output({ contains: has({ conversion: true, productos: true }), food_list: null })),
+      reply(200, output({ title: 'De crudo a cocido' })),
+      reply(200, output({ title: 'Productos' })),
+    ]);
+    const r = await importDocument({ pdfBase64: 'x', catalog: [], ...opts(f.fetchImpl) });
+    expect(r).toMatchObject({ conversion: { title: 'De crudo a cocido' }, products: { title: 'Productos' }, plan: null, foodList: null });
+    expect(f.sent.map((b) => b.response_format.schema)).toEqual([LIST_SCHEMA, CONVERSION_SCHEMA, PRODUCTS_SCHEMA]);
+  });
+
   it('solo pauta: no se inventa lista', async () => {
-    const f = fakeFetch([reply(200, output({ kind: 'pauta', food_list: list })), reply(200, output({ plan_name: 'P' }))]);
+    const f = fakeFetch([reply(200, output({ contains: has({ pauta: true }), food_list: list })), reply(200, output({ plan_name: 'P' }))]);
     const r = await importDocument({ pdfBase64: 'x', catalog: [], ...opts(f.fetchImpl) });
     expect(r.foodList).toBeNull();
     expect(r.plan).toEqual({ plan_name: 'P' });
   });
 
   it('documento que no es de la nutricionista', async () => {
-    const f = fakeFetch([reply(200, output({ kind: 'otro', food_list: null }))]);
-    await expect(importDocument({ pdfBase64: 'x', catalog: [], ...opts(f.fetchImpl) })).resolves.toMatchObject({ kind: 'otro', plan: null, foodList: null });
+    const f = fakeFetch([reply(200, output({ contains: has({}), food_list: null }))]);
+    await expect(importDocument({ pdfBase64: 'x', catalog: [], ...opts(f.fetchImpl) })).resolves.toMatchObject({ plan: null, foodList: null, conversion: null, products: null });
+    expect(f.sent).toHaveLength(1);
   });
 });

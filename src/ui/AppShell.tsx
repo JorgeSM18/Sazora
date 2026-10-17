@@ -5,12 +5,13 @@ import { Logo } from './components/Logo';
 import { href } from './router';
 import { useOptionalSession } from './Session';
 
-const NAV: { to: string; label: string; icon: IconName }[] = [
-  { to: 'inicio', label: 'Inicio', icon: 'inicio' },
-  { to: 'dieta', label: 'Mi dieta', icon: 'dieta' },
-  { to: 'plan', label: 'Plan', icon: 'plan' },
-  { to: 'recetas', label: 'Recetas', icon: 'recetas' },
-  { to: 'alimentos', label: 'Alimentos', icon: 'alimentos' },
+/** Cada pestaña se marca también en sus subsecciones (Mi dieta incluye guías y alimentos). */
+const NAV: { to: string; label: string; icon: IconName; sections: string[] }[] = [
+  { to: 'inicio', label: 'Inicio', icon: 'inicio', sections: ['inicio'] },
+  { to: 'plan', label: 'Plan', icon: 'plan', sections: ['plan'] },
+  { to: 'compra', label: 'Compra', icon: 'compra', sections: ['compra'] },
+  { to: 'recetas', label: 'Recetas', icon: 'recetas', sections: ['recetas'] },
+  { to: 'dieta', label: 'Mi dieta', icon: 'dieta', sections: ['dieta', 'guias', 'alimentos'] },
 ];
 
 const SAVE_TEXT = { guardado: 'Guardado', guardando: 'Guardando…', error: 'Sin guardar', conflicto: 'Sin guardar' } as const;
@@ -42,7 +43,7 @@ export function AppShell({ section, children }: { section: string; children: Rea
       {saveState === 'error' && <p className="banner error" role="alert">No se han podido guardar los últimos cambios. Se reintentará con el próximo cambio; comprueba la conexión.</p>}
       <nav className="nav" aria-label="Secciones">
         {NAV.map((n) => (
-          <a key={n.to} href={href(`/${n.to}`)} aria-current={section === n.to ? 'page' : undefined}>
+          <a key={n.to} href={href(`/${n.to}`)} aria-current={n.sections.includes(section) ? 'page' : undefined}>
             <Icon name={n.icon} />
             <span>{n.label}</span>
           </a>

@@ -168,6 +168,111 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
     }
   }
 
+  // ── Listas de la compra compartidas ─────────────────────
+  const shop = db.shopping;
+  /** Conexiones en tiempo real (Server-Sent Events) por lista. */
+  const listeners = new Map(); // listId → Set<{ res, userId }>
+
+  function broadcast(listId) {
+    const subs = listeners.get(listId);
+    if (!subs?.size) return;
+    const snap = shop.snapshot(listId);
+    for (const s of [...subs]) {
+      // Si ya no es miembro (o la lista no existe), se corta su conexión.
+      if (!snap || !shop.isMember(listId, s.userId)) {
+        s.res.end();
+        subs.delete(s);
+        continue;
+      }
+      s.res.write(`event: lista\ndata: ${JSON.stringify(snap)}\n\n`);
+    }
+  }
+
+  function requireMember(listId, user) {
+    if (!shop.isMember(listId, user.id)) throw new HttpError(404, 'Lista no encontrada.');
+  }
+
+  function subscribe(req, res, listId, user) {
+    requireMember(listId, user);
+    res.writeHead(200, { ...SECURITY, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    res.write(`retry: 3000\nevent: lista\ndata: ${JSON.stringify(shop.snapshot(listId))}\n\n`);
+    const sub = { res, userId: user.id };
+    if (!listeners.has(listId)) listeners.set(listId, new Set());
+    listeners.get(listId).add(sub);
+    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    req.on('close', () => {
+      clearInterval(ping);
+      listeners.get(listId)?.delete(sub);
+    });
+  }
+
+  async function shopping(req, res, url, user) {
+    const m = url.pathname.match(/^\/api\/listas(?:\/([0-9a-f-]{36}))?(?:\/(miembros|items|limpiar|eventos))?(?:\/([0-9a-f-]{36}|yo))?$/);
+    if (!m) throw new HttpError(404, 'Ruta no encontrada.');
+    const [, listId, sub, itemId] = m;
+    const route = `${req.method} ${listId ? ':lista' : ''}${sub ? `/${sub}` : ''}${itemId ? '/:id' : ''}`;
+    const reply = (status = 200) => send(res, status, shop.snapshot(listId));
+    const changed = (status = 200) => {
+      broadcast(listId);
+      reply(status);
+    };
+    const body = () => readJson(req, 200_000);
+    const fail = (e) => {
+      throw new HttpError(400, e.message);
+    };
+
+    if (route === 'GET ') return send(res, 200, { lists: shop.listsFor(user.id) });
+    if (route === 'POST ') {
+      const { name, ifNone } = await body();
+      let id;
+      try {
+        id = shop.createList(user.id, name, { ifNone: ifNone === true });
+      } catch (e) {
+        fail(e);
+      }
+      return send(res, 201, shop.snapshot(id));
+    }
+    requireMember(listId, user);
+    if (route === 'GET :lista/eventos') return subscribe(req, res, listId, user);
+    if (route === 'GET :lista') return reply();
+    if (route === 'PATCH :lista') {
+      shop.rename(listId, (await body()).name);
+      return changed();
+    }
+    if (route === 'POST :lista/miembros') {
+      const added = shop.addMember(listId, (await body()).username);
+      if (!added) throw new HttpError(404, 'No existe ningún usuario con ese nombre.');
+      return changed();
+    }
+    if (route === 'DELETE :lista/miembros/:id' && itemId === 'yo') {
+      shop.leave(listId, user.id);
+      broadcast(listId);
+      return send(res, 200, { ok: true });
+    }
+    if (route === 'POST :lista/items') {
+      try {
+        shop.addItems(listId, user.id, (await body()).items);
+      } catch (e) {
+        fail(e);
+      }
+      return changed(201);
+    }
+    if (route === 'PATCH :lista/items/:id') {
+      const { text, quantity, checked } = await body();
+      if (!shop.updateItem(listId, itemId, { text, quantity, checked })) throw new HttpError(404, 'Ese artículo ya no está en la lista.');
+      return changed();
+    }
+    if (route === 'DELETE :lista/items/:id') {
+      shop.deleteItem(listId, itemId);
+      return changed();
+    }
+    if (route === 'POST :lista/limpiar') {
+      shop.clearChecked(listId);
+      return changed();
+    }
+    throw new HttpError(404, 'Ruta no encontrada.');
+  }
+
   async function serveFile(res, file, fallback) {
     try {
       send(res, 200, await readFile(file), TYPES[extname(file)] ?? 'application/octet-stream', { 'cache-control': 'private, max-age=0' });
@@ -200,6 +305,7 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
         return send(res, r.conflict ? 409 : 200, r);
       }
       if (route === 'POST /api/importar') return await importPdf(req, res, requireUser(req));
+      if (url.pathname === '/api/listas' || url.pathname.startsWith('/api/listas/')) return await shopping(req, res, url, requireUser(req));
 
       const doc = url.pathname.match(/^\/api\/documentos\/([a-f0-9]{16})\.pdf$/);
       if (req.method === 'GET' && doc) return await serveFile(res, join(docsDir, String(requireUser(req).id), `${doc[1]}.pdf`));

@@ -99,6 +99,8 @@ Con `tls internal` en el `Caddyfile`, Caddy crea su propia autoridad de certific
 
 En las opciones B y C, el proxy envía `X-Forwarded-Proto: https`; mantén igualmente `COOKIE_SECURE=1`.
 
+La lista de la compra usa conexiones abiertas (*Server-Sent Events*) para los cambios en directo. Tailscale y Caddy las soportan sin configuración extra; si usas otro proxy, desactiva su búfer para `text/event-stream`.
+
 ## 7. Instalar la app en el móvil
 
 - **Android (Chrome):** abre la dirección HTTPS → menú ⋮ → *Instalar aplicación*.

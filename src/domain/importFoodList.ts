@@ -89,7 +89,7 @@ export function checkFoodList(list: FoodList): Check[] {
 }
 
 /** Documento de lista vigente: el último importado. */
-export const currentListDocId = (data: Pick<AppData, 'documents'>) =>
+export const currentListDocId = (data: Pick<AppData, 'documents'>): string | undefined =>
   [...data.documents].reverse().find((d) => d.kind === 'lista-intercambios')?.id;
 
 /**

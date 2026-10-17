@@ -20,6 +20,7 @@ const PATHS = {
   aviso: 'M12 4 3 20h18zM12 10v4M12 17v.5',
   subir: 'M12 15V4M7 9l5-5 5 5M5 15v5h14v-5',
   documento: 'M7 3h7l4 4v14H7zM14 3v4h4M10 13h5M10 17h5',
+  compra: 'M4 5h2l2 10h10l2-7H7M9 19.5v.5M17 19.5v.5',
 } as const;
 
 export type IconName = keyof typeof PATHS;

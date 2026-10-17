@@ -279,3 +279,38 @@ a.source { text-decoration: underline; text-decoration-thickness: 1px; }
 .welcome .btn.primary { align-self: flex-start; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--color-accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .stack-sm > * + * { margin-top: var(--space-1); }
+
+/* ── Guías ─────────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip { min-height: 36px; padding: 0 var(--space-3); border: var(--border-width) solid var(--color-border-control); border-radius: var(--radius-full); background: var(--color-surface); font: var(--text-label); cursor: pointer; }
+.chip.on { background: var(--color-text); border-color: var(--color-text); color: var(--color-bg); }
+.guide-card .row { margin-top: var(--space-3); }
+.food-grid { list-style: none; padding: 0; display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.food-card { padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.food-card > * + * { margin-top: var(--space-1); }
+.food-card-name { display: block; font-weight: 600; text-decoration: none; }
+.food-card .cooked { color: var(--color-text); padding-top: var(--space-1); border-top: 1px dashed var(--color-border); }
+.calc { border-color: var(--color-pauta); }
+.calc-result { font: var(--text-body-lg); }
+.product-list { list-style: none; padding: 0; border-top: 1px solid var(--color-border); }
+.product-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.product-list li > div > * + * { margin-top: 2px; }
+.product-name { font-weight: 600; }
+.product-name a { text-decoration: none; }
+
+/* ── Compra ────────────────────────────────── */
+.live { font: var(--text-caption); color: var(--color-text-2); display: inline-flex; align-items: center; gap: 6px; }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color-border-control); }
+.live.on { color: var(--color-success); }
+.live.on::before { background: var(--color-success); }
+.shop-add { display: flex; gap: var(--space-2); align-items: flex-end; flex-wrap: wrap; }
+.shop-add .grow { flex: 1 1 200px; }
+.qty-field { width: 120px; }
+.shop-items { list-style: none; padding: 0; border-top: 1px solid var(--color-border); margin-top: var(--space-2); }
+.shop-item { display: flex; align-items: center; gap: var(--space-2); border-bottom: 1px solid var(--color-border); }
+.shop-check { flex: 1; display: flex; align-items: center; gap: var(--space-3); min-height: 52px; padding: var(--space-2) 0; cursor: pointer; }
+.shop-check input { width: 24px; height: 24px; accent-color: var(--color-accent); flex: none; }
+.shop-text { flex: 1; font: var(--text-body-lg); }
+.shop-qty { font: var(--text-small); color: var(--color-text-2); white-space: nowrap; }
+.shop-items.done .shop-text { text-decoration: line-through; color: var(--color-text-2); }
+.from-plan label { padding: var(--space-2); }

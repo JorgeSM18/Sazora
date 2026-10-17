@@ -39,9 +39,48 @@ export interface SourceDocument {
   file?: string;
   author?: string;
   version?: string;
-  kind: 'plan' | 'lista-intercambios';
+  kind: DocumentKind;
   /** Dudas de la importación propias de este documento (p. ej. de la lista de alimentos). */
   review?: ReviewItem[];
+  /** Contenido para mostrar como guía (tablas de crudo a cocido, productos por supermercado). */
+  guide?: ConversionGuide | ProductGuide;
+}
+
+/** plan y lista-intercambios cambian poco; conversion y productos son guías de consulta. */
+export type DocumentKind = 'plan' | 'lista-intercambios' | 'conversion' | 'productos';
+
+export interface ConversionRow {
+  names: string[];
+  /** Alimentos del catálogo a los que se aplica (crudo). */
+  foodIds: string[];
+  section: string;
+  group: ExchangeGroup;
+  rawGrams: number;
+  cookedMin: number;
+  cookedMax: number;
+  page: number;
+}
+
+export interface ConversionGuide {
+  type: 'conversion';
+  rules: { text: string; page: number }[];
+  rows: ConversionRow[];
+  notes: { text: string; page: number }[];
+}
+
+export interface GuideProduct {
+  name: string;
+  category: string;
+  /** Alimento creado a partir del producto (si tiene equivalencia). */
+  foodId?: string;
+  equivalence: string;
+  raw: string;
+  page: number;
+}
+
+export interface ProductGuide {
+  type: 'productos';
+  stores: { store: string; products: GuideProduct[] }[];
 }
 
 /** "amount unit de este alimento = portions". Puede repartir en varios grupos (p. ej. focaccia). */

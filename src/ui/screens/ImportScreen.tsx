@@ -1,10 +1,12 @@
 // Importar documentos de la nutricionista desde PDF: subida → lectura con IA → revisión → confirmar.
-// Un mismo PDF puede traer la lista de alimentos, la pauta o las dos cosas; se clasifica solo.
+// Un PDF puede traer la lista de alimentos, la pauta, la tabla de crudo a cocido, la guía de productos
+// o varias de ellas a la vez: se identifica qué trae y se revisa cada parte.
 
 import { useEffect, useRef, useState } from 'react';
 import { applyImport, checkExtraction, sanitizeExtraction, unmatchedIngredients, type Extraction, type ImportedDocument } from '../../domain/importPlan';
 import { applyFoodList, checkFoodList, currentListDocId, sanitizeFoodList, type FoodList } from '../../domain/importFoodList';
-import { EXCHANGE_GROUPS, type ExchangeGroup, type Food } from '../../domain/types';
+import { applyConversion, applyProducts, checkConversion, checkProducts, sanitizeConversion, sanitizeProducts, type ConversionImport, type ProductImport } from '../../domain/importGuides';
+import { EXCHANGE_GROUPS, type AppData, type ExchangeGroup, type Food } from '../../domain/types';
 import { parseDecimal } from '../../domain/validation';
 import { useStore } from '../../state/store';
 import { Icon } from '../components/Icon';
@@ -14,12 +16,25 @@ import { href, navigate } from '../router';
 
 const MAX_MB = 40;
 
+type Part = 'lista' | 'pauta' | 'conversion' | 'productos';
+
 interface Found {
   list: FoodList | null;
   plan: Extraction | null;
-  listDoc: ImportedDocument;
-  planDoc: ImportedDocument;
+  conversion: ConversionImport | null;
+  products: ProductImport | null;
+  /** Un documento por parte (mismo PDF; id con sufijo si trae varias). */
+  docs: Record<Part, ImportedDocument>;
   model: string;
+}
+
+/** Aplica lo extraído en orden: lista → productos → crudo a cocido → pauta (la pauta enlaza con todo lo anterior). */
+function applyFound(d: AppData, f: Found, plan: Extraction | null): AppData {
+  let next = f.list ? applyFoodList(d, f.list, f.docs.lista) : d;
+  if (f.products) next = applyProducts(next, f.products, f.docs.productos);
+  if (f.conversion) next = applyConversion(next, f.conversion, f.docs.conversion);
+  if (plan) next = applyImport(next, plan, f.docs.pauta, new Date().toISOString(), f.model);
+  return next;
 }
 
 type Phase =
@@ -30,9 +45,11 @@ type Phase =
 
 interface ImportResponse {
   error?: string;
-  kind?: 'lista' | 'pauta' | 'ambos' | 'otro';
+  contains?: Partial<Record<Part, boolean>>;
   foodList?: unknown;
   plan?: unknown;
+  conversion?: unknown;
+  products?: unknown;
   document?: ImportedDocument;
   model?: string;
 }
@@ -60,11 +77,13 @@ export function ImportScreen() {
     if (status !== 200 || !body?.document) {
       return setPhase({ step: 'elegir', error: body?.error ?? `El servidor respondió con un error (${status}).`, canRetry: true });
     }
-    if (body.kind === 'otro' || (!body.foodList && !body.plan)) {
-      return setPhase({ step: 'elegir', error: 'Este PDF no parece una lista de alimentos ni una pauta de tu nutricionista.' });
+    if (!body.foodList && !body.plan && !body.conversion && !body.products) {
+      return setPhase({ step: 'elegir', error: 'Este PDF no parece un documento de tu nutricionista (lista de alimentos, pauta, tabla de crudo a cocido o productos recomendados).' });
     }
     const list = body.foodList ? sanitizeFoodList(body.foodList) : null;
     const plan = body.plan ? sanitizeExtraction(body.plan) : null;
+    const conversion = body.conversion ? sanitizeConversion(body.conversion) : null;
+    const products = body.products ? sanitizeProducts(body.products) : null;
     if (plan && !list && !hasList) {
       return setPhase({
         step: 'elegir',
@@ -72,13 +91,15 @@ export function ImportScreen() {
       });
     }
     const doc = body.document;
-    const both = !!list && !!plan;
+    const several = [list, plan, conversion, products].filter(Boolean).length > 1;
+    const docFor = (p: Part) => (several ? { ...doc, id: `${doc.id}-${p}` } : doc);
     setPhase({
       step: 'revisar',
       list,
       plan,
-      listDoc: both ? { ...doc, id: `${doc.id}-lista` } : doc,
-      planDoc: both ? { ...doc, id: `${doc.id}-pauta` } : doc,
+      conversion,
+      products,
+      docs: { lista: docFor('lista'), pauta: docFor('pauta'), conversion: docFor('conversion'), productos: docFor('productos') },
       model: body.model ?? 'Gemini',
     });
   }
@@ -114,7 +135,7 @@ export function ImportScreen() {
   const intro = {
     lista: { kicker: 'Paso 1 de 2', title: 'Sube la lista de alimentos', text: 'Las tablas de tu nutricionista que dicen cuánto de cada alimento es una porción. Si tienes un único PDF con la lista y la pauta, súbelo: se separan solas.' },
     pauta: { kicker: 'Paso 2 de 2', title: 'Sube tu pauta', text: 'Tu plan personal: porciones por comida, indicaciones y platos de ejemplo.' },
-    actualizar: { kicker: 'Mi dieta', title: 'Importar desde PDF', text: 'Sube una versión nueva de tu pauta o de tu lista de alimentos. Se detecta qué es y lo revisas antes de guardarlo.' },
+    actualizar: { kicker: 'Mi dieta', title: 'Importar desde PDF', text: 'Sube una versión nueva de tu pauta, tu lista de alimentos, la tabla de crudo a cocido o la guía de productos. Se detecta qué es y lo revisas antes de guardarlo.' },
   }[stage];
 
   return (
@@ -149,17 +170,13 @@ export function ImportScreen() {
 
       {phase.step === 'revisar' && (
         <Review
-          key={phase.planDoc.id}
+          key={phase.docs.pauta.id}
           found={phase}
           hadDiet={!!data.diet}
-          foodsAfterList={phase.list ? applyFoodList(data, phase.list, phase.listDoc).foods : data.foods}
+          dataAfterGuides={applyFound(data, phase, null)}
           onDiscard={() => setPhase({ step: 'elegir' })}
           onConfirm={(plan) => {
-            update((d) => {
-              let next = phase.list ? applyFoodList(d, phase.list, phase.listDoc) : d;
-              if (plan) next = applyImport(next, plan, phase.planDoc, new Date().toISOString(), phase.model);
-              return next;
-            });
+            update((d) => applyFound(d, phase, plan));
             navigate(plan || data.diet ? '/dieta' : '/inicio');
           }}
         />
@@ -223,21 +240,25 @@ const Doubts = ({ doubts }: { doubts: { text: string; page: number }[] }) =>
     </details>
   );
 
-function Review({ found, hadDiet, foodsAfterList, onDiscard, onConfirm }: {
+const PART_NAMES: Record<Part, string> = { lista: 'la lista de alimentos', pauta: 'una pauta', conversion: 'la tabla de crudo a cocido', productos: 'la guía de productos recomendados' };
+
+function Review({ found, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
   found: Found;
   hadDiet: boolean;
-  foodsAfterList: Food[];
+  /** Datos tras aplicar lista y guías, para comprobar enlaces de la pauta y de la tabla de cocción. */
+  dataAfterGuides: AppData;
   onDiscard: () => void;
   onConfirm: (plan: Extraction | null) => void;
 }) {
   const [plan, setPlan] = useState(found.plan);
-  const { list } = found;
-  const what = list && plan ? 'la lista de alimentos y una pauta' : list ? 'la lista de alimentos' : 'una pauta';
-  const confirm = list && plan
-    ? { label: 'Guardar lista y pauta', title: 'Guardar lista y pauta', message: 'Se guardará la lista de alimentos y esta pauta pasará a ser la tuya. Se conservan lo que has planificado y comido y tus recetas propias.' }
-    : list
+  const { list, conversion, products } = found;
+  const parts = (['lista', 'pauta', 'conversion', 'productos'] as Part[]).filter((p) => ({ lista: list, pauta: plan, conversion, productos: products })[p]);
+  const what = parts.map((p) => PART_NAMES[p]).join(', ').replace(/, ([^,]*)$/, ' y $1');
+  const confirm = plan
+    ? { label: parts.length > 1 ? 'Guardar todo' : 'Usar esta pauta', title: 'Sustituir tu pauta', message: `Esta pauta pasará a ser la tuya${parts.length > 1 ? ' y se guardará el resto del documento' : ''}. Se conservan lo que has planificado y comido, tus recetas y tus alimentos. Los platos de la pauta anterior que ya hayas usado pasan a tus recetas propias.` }
+    : list && parts.length === 1
       ? { label: 'Guardar lista', title: 'Guardar la lista', message: hadDiet ? 'Se guardará esta lista y tu pauta pasará a usarla. Las equivalencias de listas anteriores se conservan como historial.' : 'Se guardará la lista de alimentos. Después podrás subir tu pauta.' }
-      : { label: 'Usar esta pauta', title: 'Sustituir tu pauta', message: 'Esta pauta pasará a ser la tuya. Se conservan lo que has planificado y comido, tus recetas y tus alimentos. Los platos de la pauta anterior que ya hayas usado pasan a tus recetas propias.' };
+      : { label: parts.length > 1 ? 'Guardar todo' : 'Guardar guía', title: 'Guardar', message: 'Se guardará como guía de consulta en Mi dieta, junto con su PDF original. Si ya tenías una versión anterior, esta la sustituye.' };
 
   return (
     <div className="stack-lg">
@@ -247,7 +268,9 @@ function Review({ found, hadDiet, foodsAfterList, onDiscard, onConfirm }: {
       </section>
 
       {list && <ListReview list={list} />}
-      {plan && <PlanReview plan={plan} setPlan={setPlan} foods={foodsAfterList} />}
+      {products && <ProductsReview products={products} />}
+      {conversion && <ConversionReview conversion={conversion} data={dataAfterGuides} />}
+      {plan && <PlanReview plan={plan} setPlan={setPlan} foods={dataAfterGuides.foods} />}
 
       <div className="row wrap">
         <ConfirmButton className="btn primary" title={confirm.title} confirmLabel="Guardar" message={confirm.message} onConfirm={() => onConfirm(plan)}>
@@ -256,6 +279,49 @@ function Review({ found, hadDiet, foodsAfterList, onDiscard, onConfirm }: {
         <button className="btn ghost" onClick={onDiscard}>Descartar</button>
       </div>
     </div>
+  );
+}
+
+function ConversionReview({ conversion: c, data }: { conversion: ConversionImport; data: AppData }) {
+  return (
+    <section className="stack" aria-labelledby="h-rev-cc">
+      <h2 id="h-rev-cc">{c.title}</h2>
+      <Checks checks={checkConversion(c, data)} />
+      <div className="table-scroll">
+        <table className="data">
+          <thead><tr><th scope="col">Alimento</th><th scope="col">Crudo</th><th scope="col">Cocido</th></tr></thead>
+          <tbody>
+            {c.rows.map((r, k) => (
+              <tr key={k}>
+                <th scope="row">{r.names.join(', ')} <span className="muted small">{r.section}</span></th>
+                <td className="num">{fmt(r.rawGrams, 1)} g</td>
+                <td className="num">{r.cookedMin === r.cookedMax ? fmt(r.cookedMin, 1) : `${fmt(r.cookedMin, 1)}-${fmt(r.cookedMax, 1)}`} g</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {[...c.rules, ...c.notes].map((r, k) => <p key={k} className="note">{r.text}</p>)}
+      <Doubts doubts={c.doubts} />
+    </section>
+  );
+}
+
+function ProductsReview({ products: p }: { products: ProductImport }) {
+  return (
+    <section className="stack" aria-labelledby="h-rev-prod">
+      <h2 id="h-rev-prod">{p.title}</h2>
+      <Checks checks={checkProducts(p)} />
+      {p.stores.map((s, k) => (
+        <details key={k} className="panel">
+          <summary><h3>{s.store} <span className="muted">({s.products.length})</span></h3></summary>
+          <ul className="rules">
+            {s.products.map((x, j) => <li key={j}><b>{x.name}</b>{x.raw ? ` — ${x.raw}` : ''} <span className="source">pág. {x.page}</span></li>)}
+          </ul>
+        </details>
+      ))}
+      <Doubts doubts={p.doubts} />
+    </section>
   );
 }
 

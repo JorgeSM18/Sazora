@@ -3,7 +3,7 @@
 
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { StoreProvider } from '../state/store';
 import { MemoryRepository } from '../data/repository';
@@ -126,7 +126,7 @@ const PLAN = {
 };
 
 /** Servidor de importación simulado: el siguiente envío responde con `next`. */
-let next: { kind: string; foodList: unknown; plan: unknown };
+let next: { kind: string; foodList: unknown; plan: unknown; conversion?: unknown; products?: unknown };
 let finish: () => void = () => {};
 let uploads = 0;
 class FakeXHR {
@@ -209,7 +209,7 @@ describe('empezar de cero', () => {
     next = { kind: 'ambos', foodList: LIST, plan: { ...PLAN, daily_totals: P({ carbohidratos: 2, proteinaMagra: 3 }) } };
     await upload(user);
     expect(screen.getByText(/la lista de alimentos y una pauta/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Guardar lista y pauta' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar todo' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Mi pauta' })).toBeInTheDocument();
     await act(async () => {});
@@ -226,7 +226,123 @@ describe('empezar de cero', () => {
     await go('/dieta/importar');
     next = { kind: 'otro', foodList: null, plan: null };
     await upload(user);
-    expect(await screen.findByText(/no parece una lista de alimentos ni una pauta/)).toBeInTheDocument();
+    expect(await screen.findByText(/no parece un documento de tu nutricionista/)).toBeInTheDocument();
     expect(repo.saves).toBe(0);
+  });
+});
+
+describe('guías', () => {
+  const original = globalThis.XMLHttpRequest;
+  beforeEach(() => { uploads = 0; globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest; });
+  afterEach(() => { globalThis.XMLHttpRequest = original; });
+
+  it('importa crudo a cocido y productos de un PDF y se consultan como guías', async () => {
+    const user = userEvent.setup();
+    await open();
+    await go('/dieta/importar');
+    next = {
+      kind: 'x', foodList: null, plan: null,
+      conversion: {
+        title: 'De crudo a cocido', rules: [{ text: 'Con verduras y salsas ligeras, pesa la preparación final.', page: 1 }], notes: [], doubts: [],
+        items: [{ names: ['Arroz'], catalog_ids: ['arroz'], section: 'Carbohidratos', group: 'carbohidratos', raw_grams: 20, cooked_min_grams: 50, cooked_max_grams: 50, page: 1 }],
+      },
+      products: { title: 'Productos', author: null, doubts: [], stores: [{ store: 'Mercadona', products: [{ name: 'Natillas +proteínas', category: 'Postres', amount: 1, unit: 'unidad', unit_label: 'natilla', portions: { proteinaMagra: 1.5, carbohidratos: 1 }, raw: '1 natilla = 1 y 1/2 de proteína + 1 de carbo', page: 12 }] }] },
+    };
+    await user.upload(await screen.findByLabelText('PDF de la nutricionista'), new File(['%PDF-1.4'], 'guias.pdf', { type: 'application/pdf' }));
+    await act(async () => finish());
+    expect(await screen.findByText(/la tabla de crudo a cocido y la guía de productos recomendados/)).toBeInTheDocument();
+    expect(screen.getByText(/1 alimentos de tu lista tendrán su versión cocida/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Guardar todo' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
+
+    // Calculadora: 150 g de arroz cocido = 60 g en crudo = 3 porciones.
+    await go('/guias/crudo-cocido');
+    await user.type(await screen.findByLabelText('Peso cocinado (g)'), '150');
+    expect(screen.getByText(/≈/, { selector: '.calc-result' })).toHaveTextContent('≈ 60 g en crudo · 3 carbohidratos');
+    expect(screen.getByText(/pesa la preparación final/)).toBeInTheDocument();
+
+    await go('/guias/productos');
+    expect(await screen.findByText('1 natilla = 1 carbohidratos + 1,5 proteína magra')).toBeInTheDocument();
+    await go('/guias/lista');
+    expect(await screen.findByText('Cocido: 50 g cocido = 20 g crudo')).toBeInTheDocument();
+  });
+});
+
+describe('lista de la compra', () => {
+  type Item = { id: string; text: string; quantity: string; category: string; checked: boolean; addedBy: number | null };
+  type Snap = { list: { id: string; name: string; ownerId: number; members: { id: number; username: string; name: string }[] }; items: Item[] };
+  let snap: Snap;
+  let pushes: ((s: Snap) => void)[];
+
+  beforeEach(() => {
+    snap = { list: { id: 'l1', name: 'Lista de la compra', ownerId: 1, members: [{ id: 1, username: 'jorge', name: 'Jorge' }] }, items: [] };
+    pushes = [];
+    let n = 0;
+    // Servidor simulado de /api/listas.
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+      if (url === '/api/listas') return json({ lists: [{ ...snap.list, pending: 0 }] });
+      if (url.endsWith('/items') && init?.method === 'POST') snap.items.push(...body.items.map((i: Item) => ({ ...i, id: `i${++n}`, checked: false, addedBy: 1 })));
+      const item = url.match(/items\/(i\d+)$/)?.[1];
+      if (item && init?.method === 'PATCH') snap.items = snap.items.map((i) => (i.id === item ? { ...i, ...body } : i));
+      if (url.endsWith('/miembros')) snap.list.members.push({ id: 2, username: body.username, name: 'Pareja' });
+      return json(structuredClone(snap));
+    });
+    // EventSource simulado: guardamos el emisor para "empujar" cambios de la otra persona.
+    vi.stubGlobal('EventSource', class {
+      listeners: Record<string, (e: MessageEvent) => void> = {};
+      onopen?: () => void;
+      onerror?: () => void;
+      constructor() {
+        pushes.push((s) => this.listeners.lista?.({ data: JSON.stringify(s) } as MessageEvent));
+        setTimeout(() => this.onopen?.(), 0);
+      }
+      addEventListener(type: string, fn: (e: MessageEvent) => void) { this.listeners[type] = fn; }
+      close() {}
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('añade, marca, comparte y recibe cambios en directo', async () => {
+    const user = userEvent.setup();
+    await open();
+    await go('/compra');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Lista de la compra' })).toBeInTheDocument();
+    expect(await screen.findByText('En directo')).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/Añadir…/), 'Tomates');
+    await user.type(screen.getByPlaceholderText('Cantidad'), '1 kg');
+    await user.click(screen.getByRole('button', { name: 'Añadir' }));
+    expect(await screen.findByText('Tomates')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: /Tomates/ }));
+    expect(await screen.findByRole('heading', { name: 'Comprado (1)' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Compartir' }));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText(/Nombre de usuario/), 'pareja');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Compartir' }));
+    expect(await within(screen.getByRole('dialog')).findByText('Compartida con pareja.')).toBeInTheDocument();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar' }));
+
+    // La otra persona añade algo: llega por el canal en directo.
+    await act(async () => pushes.at(-1)!({ ...structuredClone(snap), items: [...snap.items, { id: 'x', text: 'Pan', quantity: '', category: '', checked: false, addedBy: 2 }] }));
+    expect(screen.getByText('Pan')).toBeInTheDocument();
+    expect(screen.getByText(/Compartida con .*Pareja/)).toBeInTheDocument();
+  });
+
+  it('añade lo planificado, sumado y en crudo', async () => {
+    const user = userEvent.setup();
+    const data = fixtureData();
+    data.plan = [{ id: 'p1', date: todayISO(), mealId: 'almuerzo', order: 0, ref: { kind: 'food', foodId: 'arroz' }, quantity: 2, unit: 'porcion' }];
+    await open(new MemoryRepository(data));
+    await go('/compra');
+    await user.click(await screen.findByRole('button', { name: /Añadir desde el plan/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Arroz')).toBeInTheDocument();
+    expect(within(dialog).getByText(/40 g/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Añadir 1 a la lista' }));
+    expect(await screen.findByText('Arroz')).toBeInTheDocument();
+    expect(snap.items[0]).toMatchObject({ text: 'Arroz', quantity: '40 g', category: 'Carbohidratos' });
   });
 });

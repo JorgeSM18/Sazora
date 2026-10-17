@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { EXCHANGE_GROUPS, NUTRIENT_KEYS, NUTRIENT_LABELS, type Diet, type ExchangeGroup, type Food, type NutrientTargets, type RuleKind, type SourceRef } from '../../domain/types';
-import { findEquivalence } from '../../domain/nutrition';
+import { EXCHANGE_GROUPS, NUTRIENT_KEYS, NUTRIENT_LABELS, type Diet, type NutrientTargets, type RuleKind, type SourceRef } from '../../domain/types';
 import { parseNutrients } from '../../domain/validation';
-import { useDiet, useCalc, useStore } from '../../state/store';
+import { useDiet, useStore } from '../../state/store';
 import { StatusBadge } from '../components/Badges';
-import { fmt, fmtPortion, GROUP_SHORT, groupLabel, portionsText } from '../format';
+import { fmtPortion, GROUP_SHORT } from '../format';
 import { href } from '../router';
 import { useDocumentUrl } from '../documents';
 import { reviewItems, setReviewResolved } from '../../domain/review';
@@ -102,7 +101,14 @@ export function DietScreen() {
         })}
       </section>
 
-      <ExchangeList diet={diet} />
+      <section aria-labelledby="h-guias" className="panel stack">
+        <h2 id="h-guias">Guías</h2>
+        <p className="muted">Lista de alimentos, de crudo a cocido y productos recomendados, en versión visual y con su PDF original.</p>
+        <div className="row wrap">
+          <a className="btn primary" href={href('/guias')}>Abrir guías</a>
+          <a className="btn" href={href('/alimentos')}>Catálogo de alimentos</a>
+        </div>
+      </section>
 
       <section aria-labelledby="h-dudas">
         <h2 id="h-dudas">Dudas de la importación {pending.length > 0 && <span className="badge warn">{pending.length} pendientes</span>}</h2>
@@ -142,47 +148,6 @@ function exportJson(data: unknown) {
   a.download = `sazora-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-function ExchangeList({ diet }: { diet: Diet }) {
-  const { data } = useStore();
-  const ctx = useCalc();
-  const byGroup = new Map<ExchangeGroup, Food[]>();
-  for (const f of data.foods) {
-    if (f.group && f.equivalences.some((e) => diet.exchangeDocs.includes(e.source.doc))) {
-      byGroup.set(f.group, [...(byGroup.get(f.group) ?? []), f]);
-    }
-  }
-  if (byGroup.size === 0) return null;
-  return (
-    <section aria-labelledby="h-lista">
-      <h2 id="h-lista">Equivalencias: qué es 1 porción</h2>
-      <p className="muted">Cantidades tal como figuran en tus documentos. Si dos documentos no coinciden, se aplica el primero de tu pauta y la duda queda registrada.</p>
-      {EXCHANGE_GROUPS.filter((g) => byGroup.has(g)).map((g) => (
-        <details key={g} className="panel">
-          <summary><h3>{groupLabel(g)} <span className="muted">({byGroup.get(g)!.length})</span></h3></summary>
-          <div className="table-scroll">
-            <table className="data">
-              <thead><tr><th scope="col">Alimento</th><th scope="col">Cantidad</th><th scope="col">Medida casera</th><th scope="col">Fuente</th></tr></thead>
-              <tbody>
-                {byGroup.get(g)!.map((f) => {
-                  const eq = (['g', 'ml', 'unidad', 'porcion'] as const).map((u) => findEquivalence(f, u, ctx)).find(Boolean)!;
-                  return (
-                    <tr key={f.id}>
-                      <th scope="row"><a href={href(`/alimentos/${f.id}`)}>{f.name}</a>{f.status === 'pendiente' && <> <StatusBadge status="pendiente" /></>}</th>
-                      <td className="num">{eq.unit === 'porcion' ? '1 porción' : `${fmt(eq.amount, 2)} ${eq.unit === 'unidad' ? f.unitLabel ?? 'ud.' : eq.unit} = ${portionsText(eq.portions)}`}</td>
-                      <td>{eq.householdMeasure ?? ''}</td>
-                      <td><SourceTag source={eq.source} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      ))}
-    </section>
-  );
 }
 
 function TargetsForm({ diet, onSave }: { diet: Diet; onSave: (t: NutrientTargets) => void }) {

@@ -5,6 +5,7 @@
 
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { shoppingStore } from './shopping.mjs';
 
 // require en vez de import: Vitest todavía no reconoce node:sqlite como módulo integrado.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
@@ -71,6 +72,8 @@ export function openDb(path = ':memory:') {
 
   return {
     close: () => db.close(),
+    /** Listas de la compra compartidas entre usuarios. */
+    shopping: shoppingStore(db),
     /** Copia coherente de la base de datos a otro archivo, aunque haya escrituras en curso. */
     backupTo: (file) => db.prepare('VACUUM INTO ?').run(file),
 

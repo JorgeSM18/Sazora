@@ -1,12 +1,15 @@
 # Sazora
 
-Aplicación personal de alimentación que trabaja sobre la pauta de tu nutricionista. Sube sus PDF (la lista de alimentos y tu pauta), Sazora los lee con IA y, a partir de ahí, puedes planificar las comidas del día, registrar lo que comes y ver cuántas porciones te quedan.
+Aplicación personal de alimentación que trabaja sobre la pauta de tu nutricionista. Sube sus PDF (lista de alimentos, pauta, tabla de crudo a cocido y productos recomendados), Sazora los lee con IA y, a partir de ahí, puedes planificar las comidas del día, registrar lo que comes, ver cuántas porciones te quedan y hacer la compra con una lista compartida.
 
 Cada usuario tiene su propia lista, su propia pauta y su propio registro, guardados en el servidor y ligados a su cuenta.
 
 ## Funcionalidades
 
-- **Importación desde PDF con Gemini.** Un único importador que clasifica el documento (lista de alimentos, pauta o ambas), extrae los datos y los muestra para revisarlos antes de guardar.
+- **Importación desde PDF con Gemini.** Un único importador que identifica qué trae cada PDF (lista de alimentos, pauta, tabla de crudo a cocido, productos por supermercado o varias a la vez), extrae cada parte y la muestra para revisarla antes de guardar.
+- **Guías.** Lista de alimentos por grupos, crudo a cocido con calculadora (gramos cocinados → porciones) y productos recomendados por supermercado, cada una con su PDF original completo.
+- **Pesar cocinado.** La tabla de crudo a cocido crea la versión cocida de cada alimento de la lista (p. ej. *Arroz (cocido)*: 50 g = 1 porción) para registrar lo que pesas ya hecho.
+- **Lista de la compra compartida en tiempo real.** Se comparte con otro usuario: lo que uno añade, marca o quita lo ve el otro al instante. *Añadir desde el plan* suma lo planificado en los próximos días, en crudo.
 - **Mi dieta.** Porciones por comida, indicaciones de la nutricionista, tabla de equivalencias ("qué es 1 porción") y dudas de la importación, con enlace a la página del PDF original.
 - **Plan diario.** Añadir alimentos o platos a cada comida, cambiar cantidades, reordenar, copiar comidas y días, y navegar entre fechas.
 - **Registro de lo comido**, separado de lo previsto: marcar como comido, ajustar la cantidad real y registrar lo no previsto.
@@ -60,11 +63,11 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 
 | Carpeta | Contenido |
 |---|---|
-| `src/domain/` | Modelo y reglas, sin React ni red. Motor de cálculo (`nutrition.ts`), plan e ingesta, resumen diario, validación e importación (`importFoodList.ts`, `importPlan.ts`) |
+| `src/domain/` | Modelo y reglas, sin React ni red. Motor de cálculo (`nutrition.ts`), plan e ingesta, resumen diario, validación, importación (`importFoodList.ts`, `importPlan.ts`, `importGuides.ts`) y compra desde el plan (`shopping.ts`) |
 | `src/data/` | `repository.ts` (datos del usuario en el servidor), `maintenance.ts` y `fixtures/` (datos de prueba) |
 | `src/state/` | Estado global: carga los datos, aplica las funciones del dominio y guarda cada cambio |
 | `src/ui/` | Sesión, pantallas y componentes. Ninguna fórmula en la interfaz |
-| `server/` | `index.mjs` (arranque), `app.mjs` (rutas), `db.mjs` (SQLite), `gemini.mjs` (lectura de PDF), `usuarios.mjs` (gestión de usuarios), `copia.mjs` (copias de seguridad) |
+| `server/` | `index.mjs` (arranque), `app.mjs` (rutas y tiempo real), `db.mjs` (SQLite), `shopping.mjs` (listas compartidas), `gemini.mjs` (lectura de PDF), `usuarios.mjs` (gestión de usuarios), `copia.mjs` (copias de seguridad) |
 | `deploy/` | Servicio de systemd, copia diaria y configuración de Caddy (ver [DESPLIEGUE.md](DESPLIEGUE.md)) |
 | `brand/` | Identidad visual: tokens de diseño (la app importa `tokens.css`) y logotipo |
 
@@ -76,17 +79,18 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 - **Trazabilidad.** Cada equivalencia guarda su documento y su página. La pauta declara qué documentos usa (`exchangeDocs`), y una lista nueva sustituye a la anterior sin borrar el historial.
 - **Plan ≠ ingesta.** Planificar no suma a lo comido, y registrar dos veces la misma comida no la duplica.
 - **Datos por usuario.** Cada usuario guarda un documento JSON versionado en SQLite. Si dos dispositivos guardan a la vez, el segundo recibe un conflicto en vez de pisar al primero.
+- **Lista de la compra aparte.** Al ser compartida, vive en sus propias tablas y cada cambio es una operación sobre un artículo (añadir, marcar, quitar), así dos personas pueden usarla a la vez sin pisarse. Los cambios llegan en directo por *Server-Sent Events* (nativo del navegador, sin dependencias).
 - **Sin dependencias en el servidor.** Solo Node: `node:http`, `node:sqlite` y `node:crypto`.
 
 ## Importar documentos (IA)
 
 1. El PDF se sube al servidor, que lo guarda en la carpeta del usuario.
-2. **Primera lectura:** Gemini clasifica el documento y, si contiene la lista de alimentos, la transcribe tabla a tabla.
-3. **Segunda lectura**, si hay pauta: Gemini la transcribe con el catálogo de alimentos conocidos (incluida la lista del mismo PDF), para enlazar los ingredientes de los platos.
+2. **Primera lectura:** Gemini identifica qué partes trae (lista, pauta, crudo a cocido, productos) y, si contiene la lista de alimentos, la transcribe tabla a tabla.
+3. **Una lectura más por cada parte** presente, con su propio esquema. La pauta y la tabla de crudo a cocido se leen con el catálogo de alimentos conocidos (incluida la lista del mismo PDF) para enlazarlos.
 4. La app sanea la respuesta, comprueba que las comidas sumen los totales del día y la muestra para revisarla. Las porciones se pueden corregir antes de guardar.
 5. Lo dudoso o lo que no pasa las comprobaciones queda en *Mi dieta → Dudas de la importación*, con enlace a la página del PDF.
 
-El orden importa: primero la lista de alimentos y después la pauta. Un PDF que traiga las dos cosas se procesa de una vez. Si Gemini está saturado, el servidor reintenta y pasa a los modelos de reserva.
+El orden importa: primero la lista de alimentos y después la pauta. Las guías (crudo a cocido y productos) son opcionales y se pueden subir en cualquier momento; un documento nuevo del mismo tipo sustituye al anterior. Un PDF que traiga varias partes se procesa de una vez. Si Gemini está saturado, el servidor reintenta y pasa a los modelos de reserva.
 
 **Privacidad:** con la API gratuita de Gemini, Google puede usar el contenido enviado para mejorar sus productos y puede revisarlo una persona. Con la facturación activada en el proyecto, no. Para pautas con datos de salud, activa la facturación.
 
@@ -111,7 +115,7 @@ El orden importa: primero la lista de alimentos y después la pauta. Un PDF que 
 
 - **Dominio:** escalado nutricional, recetas y raciones, totales, plan frente a ingesta, nutrientes desconocidos, unidades incompatibles, objetivos no configurados, importación de lista y pauta, y dudas.
 - **Datos de prueba:** las comidas suman los totales del día y 5 platos de ejemplo cuadran exactamente con las porciones de su comida.
-- **Servidor:** sesiones, registro con código de invitación, límite de intentos, aislamiento entre usuarios, conflictos de versión, importación, cabeceras y rutas.
+- **Servidor:** sesiones, registro con código de invitación, límite de intentos, aislamiento entre usuarios, conflictos de versión, importación de las cuatro partes, listas compartidas con actualizaciones en directo, cabeceras y rutas.
 - **De extremo a extremo** (jsdom): primer arranque con lista → pauta, PDF combinado, planificar y registrar, reabrir conservando los datos, 404 y formularios inválidos.
 
 Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una pauta real, anonimizada. Solo se usan en las pruebas: un usuario nuevo empieza sin datos.
@@ -121,7 +125,8 @@ Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una 
 - La equivalencia de cada alimento en la tabla de intercambios no se edita desde la interfaz; sí se pueden completar los datos nutricionales y marcar las dudas como revisadas.
 - La compatibilidad de una receta propia con la pauta no se comprueba automáticamente: se muestran sus porciones junto a las de la comida.
 - Las sustituciones documentadas (fruta ↔ carbohidrato, proteína semimagra = magra + grasa) se muestran como indicaciones, pero no se aplican al comparar con la pauta.
-- No hay lista de la compra ni asistente conversacional todavía.
+- No hay asistente conversacional todavía.
+- Las cantidades de *Añadir desde el plan* son orientativas (suma de lo planificado en crudo); lo que no tiene equivalencia entra sin cantidad.
 - `node:sqlite` aún está marcado como experimental en Node 22. Está aislado en `server/db.mjs`.
 
 ## Siguientes pasos

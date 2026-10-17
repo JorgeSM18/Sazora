@@ -3,7 +3,7 @@
 
 import { EXCHANGE_GROUPS, type AppData, type Diet, type ExchangeGroup, type Food, type Ingredient, type MeasureUnit, type Portions, type Recipe, type RuleKind } from './types';
 import { GROUP_LABELS } from './types';
-import { currentListDocId } from './importFoodList';
+import { guideDocIds } from './importGuides';
 
 export type ExtractedPortions = Partial<Record<ExchangeGroup, number | null>>;
 
@@ -132,7 +132,7 @@ export function unmatchedIngredients(x: Extraction, data: Pick<AppData, 'foods'>
  */
 export function applyImport(data: AppData, x: Extraction, doc: ImportedDocument, importedAt: string, model: string): AppData {
   const docId = doc.id;
-  const listDocs = [currentListDocId(data)].filter((d): d is string => !!d);
+  const listDocs = guideDocIds(data); // lista, productos y crudo a cocido vigentes
   const src = (page: number, raw?: string) => ({ doc: docId, page, raw });
   const foodIds = new Set(data.foods.map((f) => f.id));
   const known = (id: string | null): id is string => !!id && foodIds.has(id);

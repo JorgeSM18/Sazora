@@ -4,7 +4,8 @@
 
 export const GROUPS = ['lacteos', 'vegetales', 'frutas', 'carbohidratos', 'proteinaMagra', 'proteinaSemimagra', 'grasas'];
 const STATES = ['crudo', 'cocido', 'escurrido', 'listo', 'otro'];
-export const KINDS = ['lista', 'pauta', 'ambos', 'otro'];
+/** Partes que puede traer un PDF de la nutricionista. */
+export const PARTS = ['lista', 'pauta', 'conversion', 'productos'];
 
 const nullableNumber = { type: ['number', 'null'] };
 const nullableString = { type: ['string', 'null'] };
@@ -26,10 +27,16 @@ const portions = {
 export const LIST_SCHEMA = {
   type: 'object',
   properties: {
-    kind: {
-      type: 'string',
-      enum: KINDS,
-      description: 'lista = tablas de intercambios (cuánto de cada alimento es 1 porción). pauta = plan personal con porciones por comida. ambos = el PDF trae las dos cosas.',
+    contains: {
+      type: 'object',
+      description: 'Qué partes trae el PDF (puede traer varias).',
+      properties: {
+        lista: { type: 'boolean', description: 'Tablas de intercambios: para muchos alimentos, cuánto es 1 porción.' },
+        pauta: { type: 'boolean', description: 'Plan personal: porciones por comida, menús de ejemplo e indicaciones.' },
+        conversion: { type: 'boolean', description: 'Tabla de pesos de crudo a cocido.' },
+        productos: { type: 'boolean', description: 'Guía de productos recomendados por supermercado con sus porciones.' },
+      },
+      required: PARTS,
     },
     food_list: {
       type: ['object', 'null'],
@@ -72,11 +79,11 @@ export const LIST_SCHEMA = {
       required: ['title', 'author', 'version', 'groups', 'doubts'],
     },
   },
-  required: ['kind', 'food_list'],
+  required: ['contains', 'food_list'],
 };
 
 const LIST_INSTRUCTIONS = `Eres un asistente que clasifica y transcribe documentos de una nutricionista.
-1. Clasifica el PDF: "lista" si contiene tablas de intercambios (para muchos alimentos, cuánto es 1 porción), "pauta" si es un plan personal con porciones por comida, "ambos" si trae las dos cosas, "otro" si no es ninguna.
+1. Indica qué partes trae el PDF (pueden ser varias): "lista" (tablas de intercambios: para muchos alimentos, cuánto es 1 porción), "pauta" (plan personal con porciones por comida), "conversion" (tabla de pesos de crudo a cocido), "productos" (productos recomendados por supermercado con sus porciones). Si no es ninguna, todo false.
 2. Si contiene la lista, transcríbela COMPLETA, fila a fila y tabla a tabla. Si no, food_list = null.
 Reglas:
 - Transcribe solo lo escrito. No inventes alimentos, cantidades ni medidas. Celda vacía o "-" → null.
@@ -168,11 +175,98 @@ Reglas obligatorias:
 - Transcribe solo lo que está escrito. No inventes cantidades, porciones, calorías ni alimentos. Si algo no figura, usa null.
 - Los grupos de intercambio son: ${GROUPS.join(', ')}. "Almidones" y "carbohidratos" son el mismo grupo. "Proteína M" es proteinaMagra y "proteína SM" es proteinaSemimagra. "Leche/yogurt" y "lácteos" son lacteos.
 - Una celda vacía en una tabla de porciones es null, no 0. Un 0 escrito es 0.
-- Si el PDF también trae la lista de alimentos (tablas de intercambios), ignórala aquí: no la copies en equivalences.
+- Si el PDF también trae la lista de alimentos, la tabla de crudo a cocido o la guía de productos por supermercado, ignóralas aquí: no las copies en equivalences.
 - Para catalog_id usa el identificador del catálogo SOLO si el alimento es claramente el mismo; si hay dudas, null.
 - Cantidades: "40g" → 40 y unidad g; "2 huevos" → 2 y unidad unidad; "1 lata" → 1 unidad. Si no hay cantidad, quantity y unit null.
 - Registra en doubts cualquier ambigüedad, dato ilegible, contradicción entre páginas o cuenta que no cuadre.
 - Las páginas se cuentan desde 1. Ignora las imágenes de productos salvo que tengan texto con una equivalencia.`;
+
+// ── 3. Tabla de crudo a cocido ─────────────────────────────────────────────
+
+const literal = { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, page }, required: ['text', 'page'] } };
+
+export const CONVERSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    rules: { ...literal, description: 'Reglas generales y avisos importantes, literales.' },
+    items: {
+      type: 'array',
+      description: 'Una fila por línea de la tabla. Si una fila agrupa varios alimentos (p. ej. "Pollo, Pavo, Ternera, Cerdo"), van todos en names.',
+      items: {
+        type: 'object',
+        properties: {
+          names: { type: 'array', items: { type: 'string' } },
+          catalog_ids: { type: 'array', description: 'Para cada nombre, su id del catálogo si es claramente el mismo alimento; si no, null.', items: nullableString },
+          section: { type: 'string', description: 'Sección de la tabla (Carbohidratos, Proteínas, Legumbres…).' },
+          group: { type: 'string', enum: GROUPS },
+          raw_grams: { type: 'number' },
+          cooked_min_grams: { type: 'number' },
+          cooked_max_grams: { type: 'number', description: 'Igual que el mínimo si la tabla da un solo valor.' },
+          page,
+        },
+        required: ['names', 'catalog_ids', 'section', 'group', 'raw_grams', 'cooked_min_grams', 'cooked_max_grams', 'page'],
+      },
+    },
+    notes: { ...literal, description: 'Notas al pie, literales (p. ej. sobre legumbres de bote).' },
+    doubts,
+  },
+  required: ['title', 'rules', 'items', 'notes', 'doubts'],
+};
+
+const CONVERSION_INSTRUCTIONS = `Transcribe la tabla de pesos de crudo a cocido de la nutricionista.
+- Una fila por línea de la tabla, con los gramos en crudo y en cocido tal como aparecen. "75-85g" → mínimo 75 y máximo 85; un solo valor → mínimo y máximo iguales.
+- Grupos: ${GROUPS.join(', ')} (legumbres → carbohidratos; carnes y pescados → proteinaMagra).
+- catalog_ids: usa el id del catálogo SOLO si el alimento es claramente el mismo; si no, null.
+- Reglas generales, avisos "importante" y notas al pie: literales, sin resumir.
+- No inventes filas ni valores. Lo ambiguo, en doubts. Páginas desde 1.`;
+
+// ── 4. Productos recomendados por supermercado ─────────────────────────────
+
+export const PRODUCTS_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    author: nullableString,
+    stores: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          store: { type: 'string', description: 'Nombre del supermercado tal como aparece (Lidl, Mercadona…).' },
+          products: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Nombre del producto: el del texto o, si solo aparece en la foto, el que se lee en el envase.' },
+                category: { type: 'string', description: 'Apartado de la página (p. ej. "Productos altos en proteína", "Opciones de panes").' },
+                amount: { ...nullableNumber, description: 'Cantidad de la equivalencia (70 en "70g = 1 porción"; 1 en "1 natilla = …").' },
+                unit: { type: ['string', 'null'], enum: ['g', 'ml', 'unidad', null] },
+                unit_label: { ...nullableString, description: 'Qué es la unidad: natilla, tarrina, rebanada, paquete…' },
+                portions: { ...portions, description: 'Porciones que equivalen a esa cantidad. Todo null si el texto no da equivalencia.' },
+                raw: { type: 'string', description: 'Texto literal de la equivalencia o recomendación.' },
+                page,
+              },
+              required: ['name', 'category', 'amount', 'unit', 'unit_label', 'portions', 'raw', 'page'],
+            },
+          },
+        },
+        required: ['store', 'products'],
+      },
+    },
+    doubts,
+  },
+  required: ['title', 'author', 'stores', 'doubts'],
+};
+
+const PRODUCTS_INSTRUCTIONS = `Transcribe la guía de productos recomendados por supermercado de la nutricionista.
+- Agrupa por supermercado en el orden del documento. Un producto por recomendación.
+- "1 natilla = 1 y 1/2 porciones de proteína + 1 de carbohidrato" → amount 1, unit unidad, unit_label "natilla", proteinaMagra 1.5, carbohidratos 1.
+- "Proteína" sin más es proteinaMagra; "proteína semimagra (1 de proteína + 1 de grasa)" es proteinaSemimagra 1.
+- Si el texto se refiere a una foto ("1 = 1 porción") y no se sabe qué producto exacto es, usa el nombre del envase si se lee; si no, describe el tipo de producto y anótalo en doubts.
+- Recomendaciones sin equivalencia (verduras salteadas, bebidas vegetales…): inclúyelas con amount, unit y portions a null.
+- No inventes equivalencias. Lo ambiguo, en doubts. Páginas desde 1.`;
 
 // ── Peticiones y respuestas ────────────────────────────────────────────────
 
@@ -198,6 +292,24 @@ export function buildPlanRequest({ pdfBase64, catalog, model }) {
       { type: 'text', text: `Catálogo de alimentos conocidos (id: nombre):\n${catalog.map((f) => `${f.id}: ${f.name}`).join('\n')}\n\nTranscribe la pauta del PDF.` },
     ],
     response_format: jsonFormat(PLAN_SCHEMA),
+  };
+}
+
+export function buildConversionRequest({ pdfBase64, catalog, model }) {
+  return {
+    model,
+    system_instruction: CONVERSION_INSTRUCTIONS,
+    input: [pdfPart(pdfBase64), { type: 'text', text: `Catálogo de alimentos conocidos (id: nombre):\n${catalog.map((f) => `${f.id}: ${f.name}`).join('\n')}\n\nTranscribe la tabla de crudo a cocido.` }],
+    response_format: jsonFormat(CONVERSION_SCHEMA),
+  };
+}
+
+export function buildProductsRequest({ pdfBase64, model }) {
+  return {
+    model,
+    system_instruction: PRODUCTS_INSTRUCTIONS,
+    input: [pdfPart(pdfBase64), { type: 'text', text: 'Transcribe la guía de productos recomendados por supermercado.' }],
+    response_format: jsonFormat(PRODUCTS_SCHEMA),
   };
 }
 
@@ -283,15 +395,26 @@ export async function generate({ build, apiKey, models, signal, attempts = 2, fe
 }
 
 /**
- * Lee un PDF de la nutricionista: lo clasifica, extrae la lista si la trae y, si trae pauta,
- * la extrae enlazando ingredientes con los alimentos conocidos y con los de la lista del propio PDF.
- * Devuelve { kind, foodList, plan, model }.
+ * Lee un PDF de la nutricionista: identifica qué partes trae y extrae cada una con su esquema.
+ * La lista va en la primera lectura; la pauta y la tabla de crudo a cocido se leen con el catálogo
+ * de alimentos conocidos (incluida la lista del propio PDF) para enlazarlos.
+ * Devuelve { contains, foodList, plan, conversion, products, model }.
  */
 export async function importDocument({ pdfBase64, catalog, ...opts }) {
   const first = await generate({ ...opts, build: (model) => buildListRequest({ pdfBase64, model }) });
-  const kind = KINDS.includes(first.result?.kind) ? first.result.kind : 'otro';
-  const foodList = kind === 'lista' || kind === 'ambos' ? first.result.food_list ?? null : null;
-  if (kind !== 'pauta' && kind !== 'ambos') return { kind, foodList, plan: null, model: first.model };
-  const second = await generate({ ...opts, build: (model) => buildPlanRequest({ pdfBase64, catalog: [...catalog, ...listCatalog(foodList)], model }) });
-  return { kind, foodList, plan: second.result, model: second.model };
+  const c = first.result?.contains ?? {};
+  const contains = Object.fromEntries(PARTS.map((p) => [p, c[p] === true]));
+  const foodList = contains.lista ? first.result.food_list ?? null : null;
+  const fullCatalog = [...catalog, ...listCatalog(foodList)];
+  const models = [first.model];
+  const read = async (part, build) => {
+    if (!contains[part]) return null;
+    const r = await generate({ ...opts, build });
+    models.push(r.model);
+    return r.result;
+  };
+  const plan = await read('pauta', (model) => buildPlanRequest({ pdfBase64, catalog: fullCatalog, model }));
+  const conversion = await read('conversion', (model) => buildConversionRequest({ pdfBase64, catalog: fullCatalog, model }));
+  const products = await read('productos', (model) => buildProductsRequest({ pdfBase64, model }));
+  return { contains, foodList, plan, conversion, products, model: [...new Set(models)].join(', ') };
 }
