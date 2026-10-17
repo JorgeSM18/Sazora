@@ -20,15 +20,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand { color: var(--color-text); display: flex; }
 .plan-name { font: var(--text-label); text-decoration: none; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .content { grid-area: main; width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--space-5) var(--gutter) var(--space-8); }
-.nav { grid-area: nav; position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--color-bg); border-top: var(--border-width) solid var(--color-border); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
+.nav { grid-area: nav; position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--color-bg); border-top: var(--border-width) solid var(--color-border); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
 .nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; justify-content: center; font: var(--text-caption); text-decoration: none; color: var(--color-text-2); }
 .nav a[aria-current="page"] { color: var(--color-text); font-weight: 600; }
 .nav a[aria-current="page"] .icon { color: var(--color-accent); }
+/* En el móvil no cabe "Documentos" en 1/6 del ancho. */
+@media (max-width: 559px) { .nav .nav-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
+@media (min-width: 560px) { .nav .nav-short { display: none; } }
 @media (min-width: 900px) {
   .shell { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "top top" "banner banner" "nav main"; }
   .nav { position: sticky; top: 64px; align-self: start; display: flex; flex-direction: column; border-top: 0; padding: var(--space-5) var(--space-3); gap: var(--space-1); }
   .nav a { flex-direction: row; justify-content: flex-start; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3); border-radius: var(--radius-md); font: var(--text-label); }
   .nav a[aria-current="page"] { background: var(--color-surface-2); }
+}
+.shell.bare { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "top" "banner" "main"; }
+.shell.bare .content { width: 100%; max-width: 720px; margin-inline: auto; }
+@media (min-width: 900px) {
   .content { padding-top: var(--space-6); }
 }
 
@@ -276,7 +283,6 @@ a.source { text-decoration: underline; text-decoration-thickness: 1px; }
 .onboarding li.now .onboarding-mark { background: var(--color-accent); color: var(--color-on-accent); }
 .onboarding li.done .onboarding-mark { background: var(--color-success-soft); color: var(--color-success); }
 .onboarding li.locked { opacity: .7; }
-.welcome .btn.primary { align-self: flex-start; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--color-accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .stack-sm > * + * { margin-top: var(--space-1); }
 

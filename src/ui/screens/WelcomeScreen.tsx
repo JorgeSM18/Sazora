@@ -1,11 +1,11 @@
-// Primer arranque: sin pauta. Guía para subir primero la lista de alimentos y después la pauta.
+// Primer arranque: sin pauta. Única pantalla hasta subir la lista de alimentos y la pauta (sin menú).
 
 import { currentListDocId } from '../../domain/importFoodList';
 import { currentDoc } from '../../domain/importGuides';
 import { useStore } from '../../state/store';
 import { Icon } from '../components/Icon';
-import { href } from '../router';
 import { useOptionalSession } from '../Session';
+import { ImportScreen } from './ImportScreen';
 
 export function WelcomeScreen() {
   const { data } = useStore();
@@ -62,15 +62,14 @@ export function WelcomeScreen() {
             );
           })}
         </ul>
-        <p className="muted small">Se suben con el mismo botón, en cualquier momento. Las encontrarás en Mi dieta → Guías.</p>
+        <p className="muted small">Puedes subirlas ahora junto con lo demás o más adelante desde Documentos.</p>
       </section>
 
-      <div className="stack">
-        <a className="btn primary" href={href('/dieta/importar')}>
-          <Icon name="subir" size={18} /> {list ? 'Subir mi pauta' : 'Subir la lista de alimentos'}
-        </a>
-        {!list && <p className="muted small">¿Tu nutricionista te dio un único PDF con la lista y la pauta? Súbelo: lo separamos y completamos los dos pasos a la vez.</p>}
-      </div>
+      <section className="stack" aria-labelledby="h-subir">
+        <h2 id="h-subir">{list ? 'Sube tu pauta' : 'Sube tus PDF'}</h2>
+        <p className="muted small">Puedes elegir todos los PDF a la vez: se identifica cada uno y se ordenan solos.</p>
+        <ImportScreen bare />
+      </section>
     </section>
   );
 }

@@ -32,10 +32,8 @@ export function DietScreen() {
   const { data, update } = useStore();
   const diet = useDiet();
   const groups = EXCHANGE_GROUPS.filter((g) => diet.meals.some((m) => m.portionTargets[g] !== undefined) || diet.dailyPortionTargets[g] !== undefined);
-  const docs = data.documents.filter((d) => diet.documents.includes(d.id));
   const review = reviewItems(data);
   const pending = review.filter((r) => !r.resolved);
-  const documentUrl = useDocumentUrl();
   const setDiet = (fn: (d: Diet) => Diet) => update((x) => ({ ...x, diet: x.diet && fn(x.diet) }));
 
   return (
@@ -46,25 +44,6 @@ export function DietScreen() {
         <p className="muted">{diet.holder} · importada el {diet.importedAt} <StatusBadge status={diet.status} /></p>
         {diet.notes.map((n) => <p key={n} className="note">{n}</p>)}
       </header>
-
-      <section aria-labelledby="h-docs">
-        <h2 id="h-docs">Documentos originales</h2>
-        <p className="muted">Los PDF tal como te los dio la nutricionista. Las referencias “pág. N” de esta pantalla abren el documento en esa página.</p>
-        <ul className="doc-list">
-          {docs.map((d) => {
-            const url = documentUrl(d.id);
-            return (
-              <li key={d.id}>
-                {url ? <a className="btn" href={url} target="_blank" rel="noopener">Abrir {d.title}</a> : <span>{d.title}</span>}
-                <span className="muted small">{d.version ? `Versión ${d.version}` : ''}{d.version && d.author ? ' · ' : ''}{d.author ?? ''}</span>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="import-cta">
-          <a className="btn primary" href={href('/dieta/importar')}>Importar nueva versión desde PDF</a>
-        </div>
-      </section>
 
       <section aria-labelledby="h-pauta">
         <h2 id="h-pauta">Porciones por comida</h2>
@@ -102,10 +81,10 @@ export function DietScreen() {
       </section>
 
       <section aria-labelledby="h-guias" className="panel stack">
-        <h2 id="h-guias">Guías</h2>
-        <p className="muted">Lista de alimentos, de crudo a cocido y productos recomendados, en versión visual y con su PDF original.</p>
+        <h2 id="h-guias">Documentos y alimentos</h2>
+        <p className="muted">Tu pauta, la lista de alimentos, de crudo a cocido y los productos recomendados, con su PDF original, están en Documentos. Desde ahí también subes una versión nueva.</p>
         <div className="row wrap">
-          <a className="btn primary" href={href('/guias')}>Abrir guías</a>
+          <a className="btn primary" href={href('/guias')}>Abrir documentos</a>
           <a className="btn" href={href('/alimentos')}>Catálogo de alimentos</a>
         </div>
       </section>

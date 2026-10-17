@@ -77,7 +77,8 @@ function readBase64(file: File): Promise<string> {
   });
 }
 
-export function ImportScreen() {
+/** `bare`: sin cabecera, dentro de la pantalla de bienvenida. */
+export function ImportScreen({ bare = false }: { bare?: boolean }) {
   const { data, update } = useStore();
   const [phase, setPhase] = useState<Phase>({ step: 'elegir' });
   const xhr = useRef<XMLHttpRequest | null>(null);
@@ -202,12 +203,14 @@ export function ImportScreen() {
 
   return (
     <div className="stack-lg">
-      <header className="page-head">
-        <a href={href(data.diet ? '/dieta' : '/inicio')} className="back">← {data.diet ? 'Mi dieta' : 'Inicio'}</a>
-        <p className="kicker">{intro.kicker}</p>
-        <h1>{intro.title}</h1>
-        <p className="muted">{intro.text}</p>
-      </header>
+      {!bare && (
+        <header className="page-head">
+          <a href={href('/guias')} className="back">← Documentos</a>
+          <p className="kicker">{intro.kicker}</p>
+          <h1>{intro.title}</h1>
+          <p className="muted">{intro.text}</p>
+        </header>
+      )}
 
       {phase.step === 'elegir' && (
         <section className="panel stack">
@@ -240,6 +243,7 @@ export function ImportScreen() {
           onDiscard={() => setPhase({ step: 'elegir' })}
           onConfirm={(plan) => {
             update((d) => applyFound(d, phase, plan));
+            setPhase({ step: 'elegir' });
             navigate(plan || data.diet ? '/dieta' : '/inicio');
           }}
         />

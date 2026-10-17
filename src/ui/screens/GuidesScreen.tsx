@@ -29,7 +29,7 @@ function PdfButton({ doc }: { doc: SourceDocument }) {
 function GuideHeader({ title, doc, children }: { title: string; doc?: SourceDocument; children?: ReactNode }) {
   return (
     <header className="page-head">
-      <a href={href('/guias')} className="back">← Guías</a>
+      <a href={href('/guias')} className="back">← Documentos</a>
       <h1>{title}</h1>
       {doc && <p className="muted small">{doc.title}{doc.author ? ` · ${doc.author}` : ''}{doc.version ? ` · versión ${doc.version}` : ''}</p>}
       {children}
@@ -61,9 +61,12 @@ export function GuidesScreen() {
   return (
     <div className="stack-lg">
       <header className="page-head">
-        <a href={href('/dieta')} className="back">← Mi dieta</a>
-        <h1>Guías</h1>
-        <p className="muted">Los documentos de tu nutricionista para consultar en cualquier momento, también en su PDF original.</p>
+        <h1>Documentos</h1>
+        <p className="muted">Lo que te ha dado tu nutricionista, para consultarlo en cualquier momento, también en su PDF original.</p>
+        <div className="row wrap">
+          <a className="btn primary" href={href('/dieta/importar')}><Icon name="subir" size={16} /> Subir PDF</a>
+        </div>
+        <p className="muted small">¿Te ha dado una versión nueva? Súbela y sustituye a la anterior; antes de guardar revisas lo extraído.</p>
       </header>
       <ul className="cards">
         {cards.map((c) => (
@@ -73,6 +76,7 @@ export function GuidesScreen() {
             <div className="row wrap">
               {c.doc ? <a className="btn small primary" href={href(c.to)}>Abrir</a> : <a className="btn small" href={href('/dieta/importar')}>Subir PDF</a>}
               {c.doc && <PdfButton doc={c.doc} />}
+              {c.doc && <a className="btn small ghost" href={href('/dieta/importar')}>Sustituir</a>}
             </div>
           </li>
         ))}
@@ -80,7 +84,11 @@ export function GuidesScreen() {
           <li className="card guide-card">
             <a className="card-title" href={href('/dieta')}>Tu pauta</a>
             <p className="muted small">{plan.title}: porciones, indicaciones y platos.</p>
-            <div className="row wrap"><a className="btn small primary" href={href('/dieta')}>Abrir</a><PdfButton doc={plan} /></div>
+            <div className="row wrap">
+              <a className="btn small primary" href={href('/dieta')}>Abrir</a>
+              <PdfButton doc={plan} />
+              <a className="btn small ghost" href={href('/dieta/importar')}>Sustituir</a>
+            </div>
           </li>
         )}
       </ul>

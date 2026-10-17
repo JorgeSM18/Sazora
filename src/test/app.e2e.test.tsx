@@ -75,7 +75,7 @@ describe('con la pauta importada', () => {
     data.documents = data.documents.map((d) => ({ ...d, file: `/api/documentos/${d.id === 'plan-1-5' ? 'aaaaaaaaaaaaaaaa' : 'bbbbbbbbbbbbbbbb'}.pdf` }));
     await open(new MemoryRepository(data));
     await go('/dieta');
-    expect(await screen.findByRole('heading', { name: 'Documentos originales' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Indicaciones de la pauta' })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Plan Nutricional 1.5, pág. 6' })[0]).toHaveAttribute('href', '/api/documentos/aaaaaaaaaaaaaaaa.pdf#page=6');
   });
 
@@ -160,10 +160,12 @@ describe('empezar de cero', () => {
     await open();
     expect(screen.getByRole('heading', { name: 'Empecemos por tus documentos' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Comidas' })).not.toBeInTheDocument();
+    // Sin nada subido no hay menú: solo la subida, en la misma pantalla.
+    await go('/compra');
+    expect(screen.queryByRole('navigation', { name: 'Secciones' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sube tus PDF' })).toBeInTheDocument();
 
     // Intentar subir la pauta antes que la lista: se explica el orden y no se guarda nada.
-    await user.click(screen.getByRole('link', { name: /Subir la lista de alimentos/ }));
-    expect(await screen.findByRole('heading', { name: 'Sube la lista de alimentos' })).toBeInTheDocument();
     next = { kind: 'pauta', foodList: null, plan: PLAN };
     await upload(user);
     expect(await screen.findByText(/todavía no tienes la lista de alimentos/)).toBeInTheDocument();
@@ -174,12 +176,10 @@ describe('empezar de cero', () => {
     expect(await screen.findByText(/2 alimentos en 2 tablas/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Guardar lista' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
-    expect(await screen.findByRole('link', { name: /Subir mi pauta/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sube tu pauta' })).toBeInTheDocument();
     expect(screen.getByText(/2 alimentos con su porción/)).toBeInTheDocument();
 
     // Paso 2: la pauta, con sus platos enlazados a la lista.
-    await user.click(screen.getByRole('link', { name: /Subir mi pauta/ }));
-    expect(await screen.findByRole('heading', { name: 'Sube tu pauta' })).toBeInTheDocument();
     next = { kind: 'pauta', foodList: null, plan: PLAN };
     await upload(user);
     expect(screen.getByText(/no coincide con el total del día en: proteína magra/)).toBeInTheDocument();
@@ -193,19 +193,22 @@ describe('empezar de cero', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Mi pauta' })).toBeInTheDocument();
+    expect(screen.getByText(/Una celda se lee mal/)).toBeInTheDocument();
+    // Con todo subido aparece el menú, con Documentos para sustituir lo subido.
+    await user.click(within(screen.getByRole('navigation', { name: 'Secciones' })).getByRole('link', { name: 'Documentos' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Documentos' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Sustituir' })).toHaveLength(2); // lista y pauta
     await act(async () => {});
     const saved = (await repo.load()) as AppData;
     expect(saved.diet!.meals[0]!.portionTargets).toEqual({ carbohidratos: 2, proteinaMagra: 4 });
     // Subidas: 1 = pauta rechazada, 2 = lista, 3 = pauta.
     expect(saved.diet!.exchangeDocs).toEqual(['pdf-3', 'pdf-2']);
-    expect(screen.getByText(/Una celda se lee mal/)).toBeInTheDocument();
   });
 
   it('un único PDF con lista y pauta completa los dos pasos a la vez', async () => {
     const user = userEvent.setup();
     repo = new MemoryRepository(emptyData());
     await open();
-    await user.click(screen.getByRole('link', { name: /Subir la lista de alimentos/ }));
     next = { kind: 'ambos', foodList: LIST, plan: { ...PLAN, daily_totals: P({ carbohidratos: 2, proteinaMagra: 3 }) } };
     await upload(user);
     expect(screen.getByText(/la lista de alimentos y una pauta/)).toBeInTheDocument();

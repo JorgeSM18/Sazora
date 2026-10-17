@@ -24,16 +24,11 @@ export function App() {
   // La app vive en "/" con rutas tras "#". Cualquier otra ruta del servidor es un 404.
   const atRoot = ['/', '/index.html'].includes(window.location.pathname);
 
+  // Sin pauta todavía: solo existe la pantalla de subida, sin menú, para empezar por ahí.
+  if (!data.diet) return <AppShell section={section} bare>{atRoot ? <WelcomeScreen /> : <NotFound />}</AppShell>;
+
   let screen = <NotFound />;
-  if (atRoot && rest.length === 0 && !data.diet) {
-    // Sin pauta todavía: solo se puede importar o consultar alimentos; el resto lleva a la bienvenida.
-    if (section === 'dieta' && id === 'importar' && !action) screen = <ImportScreen />;
-    else if (section === 'guias' && !action) screen = <GuideRoute id={id} />;
-    else if (section === 'compra' && !id) screen = <ShoppingScreen />;
-    else if (section === 'alimentos' && !id) screen = <FoodsScreen />;
-    else if (section === 'alimentos' && id && !action) screen = <FoodEditor foodId={id === 'nuevo' ? undefined : id} />;
-    else if (['inicio', 'dieta', 'plan', 'recetas'].includes(section)) screen = <WelcomeScreen />;
-  } else if (atRoot && rest.length === 0) {
+  if (atRoot && rest.length === 0) {
     if (section === 'inicio' && !id) screen = <HomeScreen dateParam={date} />;
     else if (section === 'dieta' && !id) screen = <DietScreen />;
     else if (section === 'dieta' && id === 'importar' && !action) screen = <ImportScreen />;
@@ -48,5 +43,6 @@ export function App() {
     else if (section === 'alimentos' && id && !action) screen = <FoodEditor foodId={id === 'nuevo' ? undefined : id} />;
   }
 
-  return <AppShell section={section}>{screen}</AppShell>;
+  // El importador cuelga de Documentos en el menú.
+  return <AppShell section={section === 'dieta' && id === 'importar' ? 'guias' : section}>{screen}</AppShell>;
 }

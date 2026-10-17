@@ -5,22 +5,24 @@ import { Logo } from './components/Logo';
 import { href } from './router';
 import { useOptionalSession } from './Session';
 
-/** Cada pestaña se marca también en sus subsecciones (Mi dieta incluye guías y alimentos). */
-const NAV: { to: string; label: string; icon: IconName; sections: string[] }[] = [
+/** Cada pestaña se marca también en sus subsecciones (Documentos incluye las guías; Mi dieta, los alimentos). */
+const NAV: { to: string; label: string; short?: string; icon: IconName; sections: string[] }[] = [
   { to: 'inicio', label: 'Inicio', icon: 'inicio', sections: ['inicio'] },
   { to: 'plan', label: 'Plan', icon: 'plan', sections: ['plan'] },
   { to: 'compra', label: 'Compra', icon: 'compra', sections: ['compra'] },
   { to: 'recetas', label: 'Recetas', icon: 'recetas', sections: ['recetas'] },
-  { to: 'dieta', label: 'Mi dieta', icon: 'dieta', sections: ['dieta', 'guias', 'alimentos'] },
+  { to: 'guias', label: 'Documentos', short: 'Docs', icon: 'documento', sections: ['guias'] },
+  { to: 'dieta', label: 'Mi dieta', icon: 'dieta', sections: ['dieta', 'alimentos'] },
 ];
 
 const SAVE_TEXT = { guardado: 'Guardado', guardando: 'Guardando…', error: 'Sin guardar', conflicto: 'Sin guardar' } as const;
 
-export function AppShell({ section, children }: { section: string; children: ReactNode }) {
+/** `bare`: sin menú (primer arranque, cuando aún no hay nada subido). */
+export function AppShell({ section, bare = false, children }: { section: string; bare?: boolean; children: ReactNode }) {
   const { data, saveState } = useStore();
   const session = useOptionalSession();
   return (
-    <div className="shell">
+    <div className={bare ? 'shell bare' : 'shell'}>
       <a className="skip" href="#contenido">Saltar al contenido</a>
       <header className="topbar">
         <a href={href('/inicio')} className="brand" aria-label="Sazora, inicio"><Logo /></a>
@@ -41,14 +43,16 @@ export function AppShell({ section, children }: { section: string; children: Rea
         </p>
       )}
       {saveState === 'error' && <p className="banner error" role="alert">No se han podido guardar los últimos cambios. Se reintentará con el próximo cambio; comprueba la conexión.</p>}
-      <nav className="nav" aria-label="Secciones">
-        {NAV.map((n) => (
-          <a key={n.to} href={href(`/${n.to}`)} aria-current={n.sections.includes(section) ? 'page' : undefined}>
-            <Icon name={n.icon} />
-            <span>{n.label}</span>
-          </a>
-        ))}
-      </nav>
+      {!bare && (
+        <nav className="nav" aria-label="Secciones">
+          {NAV.map((n) => (
+            <a key={n.to} href={href(`/${n.to}`)} aria-current={n.sections.includes(section) ? 'page' : undefined}>
+              <Icon name={n.icon} />
+              {n.short ? <><span className="nav-long">{n.label}</span><span className="nav-short" aria-hidden="true">{n.short}</span></> : <span>{n.label}</span>}
+            </a>
+          ))}
+        </nav>
+      )}
       <main id="contenido" className="content" tabIndex={-1}>
         {children}
       </main>
