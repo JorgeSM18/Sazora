@@ -219,6 +219,38 @@ describe('empezar de cero', () => {
     expect(saved.recipes[0]!.ingredients.every((i) => i.foodId)).toBe(true);
   });
 
+  it('varios PDF a la vez: la pauta elegida antes que la lista se relee al final, enlazada', async () => {
+    const user = userEvent.setup();
+    repo = new MemoryRepository(emptyData());
+    await open();
+    await go('/dieta/importar');
+    const pdf = (name: string) => new File(['%PDF-1.4'], name, { type: 'application/pdf' });
+    await user.upload(await screen.findByLabelText('PDF de la nutricionista'), [pdf('pauta.pdf'), pdf('lista.pdf'), pdf('foto.pdf')]);
+    /** Espera a que Gemini "esté leyendo" ese PDF y responde con `n`. */
+    const serve = async (label: string, n: typeof next) => {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+      await screen.findByText(/Gemini está leyendo/);
+      next = n;
+      await act(async () => finish());
+    };
+    await serve('PDF 1 de 3 · pauta.pdf', { kind: 'pauta', foodList: null, plan: PLAN });
+    await serve('PDF 2 de 4 · lista.pdf', { kind: 'lista', foodList: LIST, plan: null });
+    await serve('PDF 3 de 4 · foto.pdf', { kind: 'otro', foodList: null, plan: null });
+    await serve('PDF 4 de 4 · pauta.pdf', { kind: 'pauta', foodList: null, plan: PLAN });
+
+    expect(await screen.findByText(/no se importan: foto.pdf/)).toBeInTheDocument();
+    expect(screen.getByText('pauta.pdf')).toBeInTheDocument();
+    expect(screen.getByText('lista.pdf')).toBeInTheDocument();
+    expect(screen.queryByText(/Sin enlazar a un alimento/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Guardar todo' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
+    await act(async () => {});
+    const saved = (await repo.load()) as AppData;
+    // Subidas: 1 = pauta (se aplaza), 2 = lista, 3 = foto, 4 = pauta otra vez.
+    expect(saved.documents.map((d) => [d.id, d.kind])).toEqual([['pdf-2', 'lista-intercambios'], ['pdf-4', 'plan']]);
+    expect(saved.recipes[0]!.ingredients.every((i) => i.foodId)).toBe(true);
+  });
+
   it('un PDF que no es de la nutricionista no se importa', async () => {
     const user = userEvent.setup();
     repo = new MemoryRepository(null);

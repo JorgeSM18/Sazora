@@ -23,25 +23,39 @@ interface Found {
   plan: Extraction | null;
   conversion: ConversionImport | null;
   products: ProductImport | null;
-  /** Un documento por parte (mismo PDF; id con sufijo si trae varias). */
-  docs: Record<Part, ImportedDocument>;
+  /** Un documento por parte (id con sufijo si su PDF trae varias). */
+  docs: Partial<Record<Part, ImportedDocument>>;
+  /** Nombre del PDF del que sale cada parte. */
+  files: Partial<Record<Part, string>>;
   model: string;
 }
 
+const EMPTY: Found = { list: null, plan: null, conversion: null, products: null, docs: {}, files: {}, model: '' };
+
 /** Aplica lo extraído en orden: lista → productos → crudo a cocido → pauta (la pauta enlaza con todo lo anterior). */
 function applyFound(d: AppData, f: Found, plan: Extraction | null): AppData {
-  let next = f.list ? applyFoodList(d, f.list, f.docs.lista) : d;
-  if (f.products) next = applyProducts(next, f.products, f.docs.productos);
-  if (f.conversion) next = applyConversion(next, f.conversion, f.docs.conversion);
-  if (plan) next = applyImport(next, plan, f.docs.pauta, new Date().toISOString(), f.model);
+  let next = f.list ? applyFoodList(d, f.list, f.docs.lista!) : d;
+  if (f.products) next = applyProducts(next, f.products, f.docs.productos!);
+  if (f.conversion) next = applyConversion(next, f.conversion, f.docs.conversion!);
+  if (plan) next = applyImport(next, plan, f.docs.pauta!, new Date().toISOString(), f.model);
   return next;
 }
 
 type Phase =
   | { step: 'elegir'; error?: string; canRetry?: boolean }
-  | { step: 'subiendo'; percent: number }
-  | { step: 'analizando'; since: number }
-  | ({ step: 'revisar' } & Found);
+  | { step: 'subiendo'; percent: number; label: string }
+  | { step: 'analizando'; since: number; label: string }
+  | ({ step: 'revisar'; skipped: string[] } & Found);
+
+/** Varios PDF se leen de uno en uno (el servidor atiende una importación por usuario) y se juntan. */
+interface Batch {
+  files: File[];
+  next: number;
+  found: Found;
+  skipped: string[];
+  /** PDF ya reenviados al final de la cola por llegar antes que la lista. */
+  deferred: Set<File>;
+}
 
 interface ImportResponse {
   error?: string;
@@ -67,73 +81,121 @@ export function ImportScreen() {
   const { data, update } = useStore();
   const [phase, setPhase] = useState<Phase>({ step: 'elegir' });
   const xhr = useRef<XMLHttpRequest | null>(null);
-  const lastFile = useRef<File | null>(null);
-  useEffect(() => () => xhr.current?.abort(), []);
+  const batch = useRef<Batch | null>(null);
+  useEffect(
+    () => () => {
+      batch.current = null;
+      xhr.current?.abort();
+    },
+    [],
+  );
 
   const hasList = !!currentListDocId(data);
   const stage = !hasList ? 'lista' : !data.diet ? 'pauta' : 'actualizar';
 
-  function receive(status: number, body: ImportResponse | null) {
-    if (status !== 200 || !body?.document) {
-      return setPhase({ step: 'elegir', error: body?.error ?? `El servidor respondió con un error (${status}).`, canRetry: true });
+  /** Sube un PDF y espera lo que lee Gemini. Rechaza solo si se cancela. */
+  function upload(file: File, label: string, catalog: Food[]): Promise<{ status: number; body: ImportResponse | null }> {
+    setPhase({ step: 'subiendo', percent: 0, label });
+    return readBase64(file).then(
+      (pdfBase64) =>
+        new Promise((resolve, reject) => {
+          const req = new XMLHttpRequest();
+          xhr.current = req;
+          req.open('POST', '/api/importar');
+          req.setRequestHeader('content-type', 'application/json');
+          req.responseType = 'json';
+          req.upload.onprogress = (e) => e.lengthComputable && setPhase({ step: 'subiendo', percent: Math.round((e.loaded / e.total) * 100), label });
+          req.upload.onload = () => setPhase({ step: 'analizando', since: Date.now(), label });
+          req.onerror = () => resolve({ status: 0, body: { error: 'No se pudo conectar con el servidor de Sazora.' } });
+          req.onabort = () => reject(new Error('cancelado'));
+          req.onload = () => resolve({ status: req.status, body: req.response as ImportResponse | null });
+          req.send(JSON.stringify({ pdfBase64, catalog: catalog.map((f) => ({ id: f.id, name: f.brand ? `${f.name} (${f.brand})` : f.name })) }));
+        }),
+      (e: Error) => ({ status: 0, body: { error: e.message } }),
+    );
+  }
+
+  function start(files: File[]) {
+    const bad = files.find((f) => f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf'));
+    if (bad) return setPhase({ step: 'elegir', error: `${bad.name} no es un PDF.` });
+    const big = files.find((f) => f.size > MAX_MB * 1024 * 1024);
+    if (big) return setPhase({ step: 'elegir', error: `${big.name} supera los ${MAX_MB} MB.` });
+    batch.current = { files, next: 0, found: EMPTY, skipped: [], deferred: new Set() };
+    void run();
+  }
+
+  async function run() {
+    const b = batch.current!;
+    while (b.next < b.files.length) {
+      const file = b.files[b.next]!;
+      const label = b.files.length > 1 ? `PDF ${b.next + 1} de ${b.files.length} · ${file.name}` : file.name;
+      let res;
+      try {
+        res = await upload(file, label, applyFound(data, b.found, null).foods);
+      } catch {
+        batch.current = null;
+        return setPhase({ step: 'elegir' });
+      }
+      if (batch.current !== b) return;
+      const { status, body } = res;
+      if (status !== 200 || !body?.document) {
+        const error = body?.error ?? `El servidor respondió con un error (${status}).`;
+        return setPhase({ step: 'elegir', error: b.files.length > 1 ? `${file.name}: ${error}` : error, canRetry: true });
+      }
+      const got = {
+        lista: body.foodList ? sanitizeFoodList(body.foodList) : null,
+        pauta: body.plan ? sanitizeExtraction(body.plan) : null,
+        conversion: body.conversion ? sanitizeConversion(body.conversion) : null,
+        productos: body.products ? sanitizeProducts(body.products) : null,
+      };
+      const parts = (Object.keys(got) as Part[]).filter((p) => got[p]);
+      b.next++;
+      if (!parts.length) {
+        if (b.files.length === 1) {
+          batch.current = null;
+          return setPhase({ step: 'elegir', error: 'Este PDF no parece un documento de tu nutricionista (lista de alimentos, pauta, tabla de crudo a cocido o productos recomendados).' });
+        }
+        b.skipped.push(file.name);
+        continue;
+      }
+      // Pauta y guías se enlazan con la lista: si aún no la hay y quedan PDF, este se vuelve a leer al final.
+      if (!got.lista && !hasList && !b.found.list && b.next < b.files.length && !b.deferred.has(file)) {
+        b.deferred.add(file);
+        b.files.push(file);
+        continue;
+      }
+      const doc = body.document;
+      const docs = { ...b.found.docs };
+      const files = { ...b.found.files };
+      for (const p of parts) {
+        docs[p] = parts.length > 1 ? { ...doc, id: `${doc.id}-${p}` } : doc;
+        files[p] = file.name;
+      }
+      b.found = {
+        list: got.lista ?? b.found.list,
+        plan: got.pauta ?? b.found.plan,
+        conversion: got.conversion ?? b.found.conversion,
+        products: got.productos ?? b.found.products,
+        docs,
+        files,
+        model: [...new Set([...b.found.model.split(', '), ...(body.model ?? 'Gemini').split(', ')].filter(Boolean))].join(', '),
+      };
     }
-    if (!body.foodList && !body.plan && !body.conversion && !body.products) {
-      return setPhase({ step: 'elegir', error: 'Este PDF no parece un documento de tu nutricionista (lista de alimentos, pauta, tabla de crudo a cocido o productos recomendados).' });
+    batch.current = null;
+    if (!b.found.list && !b.found.plan && !b.found.conversion && !b.found.products) {
+      return setPhase({ step: 'elegir', error: 'Ninguno de estos PDF parece un documento de tu nutricionista.' });
     }
-    const list = body.foodList ? sanitizeFoodList(body.foodList) : null;
-    const plan = body.plan ? sanitizeExtraction(body.plan) : null;
-    const conversion = body.conversion ? sanitizeConversion(body.conversion) : null;
-    const products = body.products ? sanitizeProducts(body.products) : null;
-    if (plan && !list && !hasList) {
+    if (b.found.plan && !b.found.list && !hasList) {
       return setPhase({
         step: 'elegir',
         error: 'Este PDF es una pauta, pero todavía no tienes la lista de alimentos. Sube primero la lista (o un PDF que traiga las dos cosas) y después esta pauta.',
       });
     }
-    const doc = body.document;
-    const several = [list, plan, conversion, products].filter(Boolean).length > 1;
-    const docFor = (p: Part) => (several ? { ...doc, id: `${doc.id}-${p}` } : doc);
-    setPhase({
-      step: 'revisar',
-      list,
-      plan,
-      conversion,
-      products,
-      docs: { lista: docFor('lista'), pauta: docFor('pauta'), conversion: docFor('conversion'), productos: docFor('productos') },
-      model: body.model ?? 'Gemini',
-    });
-  }
-
-  async function start(file: File) {
-    lastFile.current = null;
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return setPhase({ step: 'elegir', error: 'El archivo tiene que ser un PDF.' });
-    if (file.size > MAX_MB * 1024 * 1024) return setPhase({ step: 'elegir', error: `El PDF supera los ${MAX_MB} MB.` });
-    lastFile.current = file;
-    setPhase({ step: 'subiendo', percent: 0 });
-    let pdfBase64: string;
-    try {
-      pdfBase64 = await readBase64(file);
-    } catch (e) {
-      return setPhase({ step: 'elegir', error: (e as Error).message });
-    }
-    const req = new XMLHttpRequest();
-    xhr.current = req;
-    req.open('POST', '/api/importar');
-    req.setRequestHeader('content-type', 'application/json');
-    req.responseType = 'json';
-    req.upload.onprogress = (e) => e.lengthComputable && setPhase({ step: 'subiendo', percent: Math.round((e.loaded / e.total) * 100) });
-    req.upload.onload = () => setPhase({ step: 'analizando', since: Date.now() });
-    req.onerror = () => setPhase({ step: 'elegir', error: 'No se pudo conectar con el servidor de Sazora.', canRetry: true });
-    req.onabort = () => {
-      lastFile.current = null;
-      setPhase({ step: 'elegir' });
-    };
-    req.onload = () => receive(req.status, req.response as ImportResponse | null);
-    req.send(JSON.stringify({ pdfBase64, catalog: data.foods.map((f) => ({ id: f.id, name: f.brand ? `${f.name} (${f.brand})` : f.name })) }));
+    setPhase({ step: 'revisar', ...b.found, skipped: b.skipped });
   }
 
   const intro = {
-    lista: { kicker: 'Paso 1 de 2', title: 'Sube la lista de alimentos', text: 'Las tablas de tu nutricionista que dicen cuánto de cada alimento es una porción. Si tienes un único PDF con la lista y la pauta, súbelo: se separan solas.' },
+    lista: { kicker: 'Paso 1 de 2', title: 'Sube la lista de alimentos', text: 'Las tablas de tu nutricionista que dicen cuánto de cada alimento es una porción. Puedes elegir a la vez todos los PDF que te haya dado (lista, pauta, crudo a cocido, mercado): se identifica cada uno solo.' },
     pauta: { kicker: 'Paso 2 de 2', title: 'Sube tu pauta', text: 'Tu plan personal: porciones por comida, indicaciones y platos de ejemplo.' },
     actualizar: { kicker: 'Mi dieta', title: 'Importar desde PDF', text: 'Sube una versión nueva de tu pauta, tu lista de alimentos, la tabla de crudo a cocido o la guía de productos. Se detecta qué es y lo revisas antes de guardarlo.' },
   }[stage];
@@ -152,14 +214,14 @@ export function ImportScreen() {
           {phase.error && (
             <div className="note warn" role="alert">
               <p><Icon name="aviso" size={16} /> {phase.error}</p>
-              {phase.canRetry && lastFile.current && (
-                <button className="btn small" style={{ marginTop: 'var(--space-2)' }} onClick={() => void start(lastFile.current!)}>
-                  Reintentar con {lastFile.current.name}
+              {phase.canRetry && batch.current && (
+                <button className="btn small" style={{ marginTop: 'var(--space-2)' }} onClick={() => void run()}>
+                  Reintentar con {batch.current.files[batch.current.next]!.name}
                 </button>
               )}
             </div>
           )}
-          <PdfDrop onFile={(f) => void start(f)} />
+          <PdfDrop onFiles={start} />
           <p className="note">
             El PDF se guarda en tu usuario de Sazora y se envía a <b>Google Gemini</b> para leerlo. Con la API gratuita, Google puede usar ese contenido para mejorar sus productos; con facturación activada, no.
           </p>
@@ -170,10 +232,11 @@ export function ImportScreen() {
 
       {phase.step === 'revisar' && (
         <Review
-          key={phase.docs.pauta.id}
+          key={Object.values(phase.docs).map((d) => d.id).join()}
           found={phase}
           hadDiet={!!data.diet}
           dataAfterGuides={applyFound(data, phase, null)}
+          skipped={phase.skipped}
           onDiscard={() => setPhase({ step: 'elegir' })}
           onConfirm={(plan) => {
             update((d) => applyFound(d, phase, plan));
@@ -186,19 +249,19 @@ export function ImportScreen() {
 }
 
 /** Zona para elegir o soltar el PDF. El input nativo queda accesible (teclado y lector de pantalla). */
-function PdfDrop({ onFile }: { onFile: (f: File) => void }) {
+function PdfDrop({ onFiles }: { onFiles: (f: File[]) => void }) {
   const [over, setOver] = useState(false);
   return (
     <label
       className={`dropzone${over ? ' over' : ''}`}
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
+      onDrop={(e) => { e.preventDefault(); setOver(false); const f = [...e.dataTransfer.files]; if (f.length) onFiles(f); }}
     >
-      <input className="sr-only" type="file" accept="application/pdf,.pdf" aria-label="PDF de la nutricionista" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onFile(f); }} />
+      <input className="sr-only" type="file" multiple accept="application/pdf,.pdf" aria-label="PDF de la nutricionista" onChange={(e) => { const f = [...(e.target.files ?? [])]; e.target.value = ''; if (f.length) onFiles(f); }} />
       <span className="dropzone-icon" aria-hidden="true"><Icon name="documento" size={28} /></span>
       <span className="btn primary dropzone-btn" aria-hidden="true"><Icon name="subir" size={18} /> Elegir PDF</span>
-      <span className="dropzone-hint muted small">o arrástralo aquí · máximo {MAX_MB} MB</span>
+      <span className="dropzone-hint muted small">o arrástralos aquí · puedes elegir varios · máximo {MAX_MB} MB cada uno</span>
     </label>
   );
 }
@@ -216,6 +279,7 @@ function Progress({ phase, onCancel }: { phase: Extract<Phase, { step: 'subiendo
     <section className="panel loader" aria-live="polite" aria-busy="true">
       <div className="spinner" aria-hidden="true" />
       <p className="loader-title">{phase.step === 'subiendo' ? `Subiendo el PDF… ${phase.percent} %` : `Gemini está leyendo el documento… ${seconds} s`}</p>
+      <p className="small">{phase.label}</p>
       <p className="muted small">{phase.step === 'analizando' ? 'Puede tardar de uno a varios minutos: primero identifica qué contiene y luego lo transcribe. Si Gemini está saturado, se reintenta solo.' : 'Preparando el envío.'}</p>
       <ol className="steps-progress">
         {steps.map((s, k) => <li key={s} className={k < current ? 'done' : k === current ? 'now' : ''}>{s}</li>)}
@@ -242,8 +306,9 @@ const Doubts = ({ doubts }: { doubts: { text: string; page: number }[] }) =>
 
 const PART_NAMES: Record<Part, string> = { lista: 'la lista de alimentos', pauta: 'una pauta', conversion: 'la tabla de crudo a cocido', productos: 'la guía de productos recomendados' };
 
-function Review({ found, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
+function Review({ found, skipped, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
   found: Found;
+  skipped: string[];
   hadDiet: boolean;
   /** Datos tras aplicar lista y guías, para comprobar enlaces de la pauta y de la tabla de cocción. */
   dataAfterGuides: AppData;
@@ -264,7 +329,15 @@ function Review({ found, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
     <div className="stack-lg">
       <section className="panel stack" aria-labelledby="h-rev">
         <h2 id="h-rev">Revisa lo extraído</h2>
-        <p>Este PDF contiene <b>{what}</b>. <span className="muted small">Leído con {found.model}.</span></p>
+        {new Set(Object.values(found.files)).size > 1 ? (
+          <ul className="rules">
+            {parts.map((p) => <li key={p}><b>{found.files[p]}</b>: {PART_NAMES[p]}</li>)}
+          </ul>
+        ) : (
+          <p>Este PDF contiene <b>{what}</b>.</p>
+        )}
+        {skipped.length > 0 && <p className="note warn"><Icon name="aviso" size={16} /> No parecen documentos de tu nutricionista y no se importan: {skipped.join(', ')}.</p>}
+        <p className="muted small">Leído con {found.model}.</p>
       </section>
 
       {list && <ListReview list={list} />}
