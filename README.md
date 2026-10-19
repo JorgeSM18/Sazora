@@ -111,7 +111,7 @@ El orden importa: primero la lista de alimentos y después la pauta. Las guías 
 
 - **Red:** el servidor escucha solo en `127.0.0.1` por defecto; el acceso es a través del proxy HTTPS de la red privada.
 
-**Al desplegar:** sigue [DESPLIEGUE.md](DESPLIEGUE.md): HTTPS en la red privada con `COOKIE_SECURE=1`, servicio aislado con systemd, copia diaria y copias fuera de la VM.
+**Al desplegar:** sigue [DESPLIEGUE.md](DESPLIEGUE.md) (Oracle Cloud + Tailscale): HTTPS solo dentro de la tailnet con `COOKIE_SECURE=1`, servicio aislado con systemd, copia diaria y copias fuera de la VM.
 
 ## Pruebas
 
@@ -135,5 +135,5 @@ Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una 
 
 ## Siguientes pasos
 
-- Desplegar en la VM privada siguiendo [DESPLIEGUE.md](DESPLIEGUE.md).
+- Desplegar en Oracle Cloud con Tailscale siguiendo [DESPLIEGUE.md](DESPLIEGUE.md).
 - Asistente con IA que use el dominio como herramientas (`daySummary`, `recipePerServing`, las equivalencias de la pauta), sin poder modificar la pauta y validando sus propuestas con el motor antes de mostrarlas.
