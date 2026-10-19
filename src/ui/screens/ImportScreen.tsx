@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { applyImport, checkExtraction, sanitizeExtraction, unmatchedIngredients, type Extraction, type ImportedDocument } from '../../domain/importPlan';
 import { applyFoodList, checkFoodList, currentListDocId, sanitizeFoodList, type FoodList } from '../../domain/importFoodList';
-import { applyConversion, applyProducts, checkConversion, checkProducts, sanitizeConversion, sanitizeProducts, type ConversionImport, type ProductImport } from '../../domain/importGuides';
+import { applyConversion, applyProducts, checkConversion, checkProducts, currentDoc, sanitizeConversion, sanitizeProducts, type ConversionImport, type ProductImport } from '../../domain/importGuides';
 import { EXCHANGE_GROUPS, type AppData, type ExchangeGroup, type Food } from '../../domain/types';
 import { parseDecimal } from '../../domain/validation';
 import { useStore } from '../../state/store';
@@ -31,6 +31,10 @@ interface Found {
 }
 
 const EMPTY: Found = { list: null, plan: null, conversion: null, products: null, docs: {}, files: {}, model: '' };
+const FOUND_KEY = { lista: 'list', pauta: 'plan', conversion: 'conversion', productos: 'products' } as const;
+
+/** Parte leída de un PDF que trae varias (su id lleva el sufijo de la parte), no de un documento propio. */
+const isExtra = (docId: string, p: Part) => docId.endsWith(`-${p}`);
 
 /** Aplica lo extraído en orden: lista → productos → crudo a cocido → pauta (la pauta enlaza con todo lo anterior). */
 function applyFound(d: AppData, f: Found, plan: Extraction | null): AppData {
@@ -44,8 +48,8 @@ function applyFound(d: AppData, f: Found, plan: Extraction | null): AppData {
 type Phase =
   | { step: 'elegir'; error?: string; canRetry?: boolean }
   | { step: 'subiendo'; percent: number; label: string }
-  | { step: 'analizando'; since: number; label: string }
-  | ({ step: 'revisar'; skipped: string[] } & Found);
+  | { step: 'analizando'; label: string; done: number; total: number | null; current: string }
+  | ({ step: 'revisar'; skipped: string[]; kept: string[] } & Found);
 
 /** Varios PDF se leen de uno en uno (el servidor atiende una importación por usuario) y se juntan. */
 interface Batch {
@@ -53,6 +57,8 @@ interface Batch {
   next: number;
   found: Found;
   skipped: string[];
+  /** Partes descartadas porque ya hay un documento propio de ese tipo. */
+  kept: string[];
   /** PDF ya reenviados al final de la cola por llegar antes que la lista. */
   deferred: Set<File>;
 }
@@ -66,6 +72,24 @@ interface ImportResponse {
   products?: unknown;
   document?: ImportedDocument;
   model?: string;
+}
+
+type Progress = { type: 'progreso'; done: number; total: number | null; label: string };
+
+/** Respuesta por líneas del servidor: avance de cada lectura y, al final, { status, body }. */
+function readLines(text: string): { progress?: Progress; final?: { status: number; body: ImportResponse } } {
+  const out: ReturnType<typeof readLines> = {};
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const msg = JSON.parse(line) as Progress | { status: number; body: ImportResponse };
+      if ('type' in msg) out.progress = msg;
+      else out.final = msg;
+    } catch {
+      // línea a medio llegar: se leerá completa en el siguiente aviso
+    }
+  }
+  return out;
 }
 
 function readBase64(file: File): Promise<string> {
@@ -105,12 +129,26 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
           xhr.current = req;
           req.open('POST', '/api/importar');
           req.setRequestHeader('content-type', 'application/json');
-          req.responseType = 'json';
+          req.setRequestHeader('accept', 'application/x-ndjson');
+          const analysing = (p?: Progress) => setPhase({ step: 'analizando', label, done: p?.done ?? 0, total: p?.total ?? null, current: p?.label ?? 'Identificando el documento' });
           req.upload.onprogress = (e) => e.lengthComputable && setPhase({ step: 'subiendo', percent: Math.round((e.loaded / e.total) * 100), label });
-          req.upload.onload = () => setPhase({ step: 'analizando', since: Date.now(), label });
+          req.upload.onload = () => analysing();
+          req.onprogress = () => {
+            const { progress } = readLines(req.responseText);
+            if (progress) analysing(progress);
+          };
           req.onerror = () => resolve({ status: 0, body: { error: 'No se pudo conectar con el servidor de Sazora.' } });
           req.onabort = () => reject(new Error('cancelado'));
-          req.onload = () => resolve({ status: req.status, body: req.response as ImportResponse | null });
+          req.onload = () => {
+            // Los errores previos a la lectura (sesión, PDF no válido…) llegan como JSON normal.
+            if (!req.getResponseHeader('content-type')?.includes('ndjson')) {
+              let body: ImportResponse | null = null;
+              try { body = JSON.parse(req.responseText) as ImportResponse; } catch { /* respuesta vacía o no JSON */ }
+              return resolve({ status: req.status, body });
+            }
+            const { final } = readLines(req.responseText);
+            resolve(final ?? { status: 0, body: { error: 'La respuesta del servidor quedó cortada. Inténtalo de nuevo.' } });
+          };
           req.send(JSON.stringify({ pdfBase64, catalog: catalog.map((f) => ({ id: f.id, name: f.brand ? `${f.name} (${f.brand})` : f.name })) }));
         }),
       (e: Error) => ({ status: 0, body: { error: e.message } }),
@@ -128,7 +166,7 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
     if (bad) return setPhase({ step: 'elegir', error: `${bad.name} no es un PDF.` });
     const big = files.find((f) => f.size > MAX_MB * 1024 * 1024);
     if (big) return setPhase({ step: 'elegir', error: `${big.name} supera los ${MAX_MB} MB.` });
-    batch.current = { files, next: 0, found: EMPTY, skipped: [], deferred: new Set() };
+    batch.current = { files, next: 0, found: EMPTY, skipped: [], kept: [], deferred: new Set() };
     void run();
   }
 
@@ -173,23 +211,44 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
         continue;
       }
       const doc = body.document;
-      const docs = { ...b.found.docs };
-      const files = { ...b.found.files };
-      for (const p of parts) {
-        docs[p] = parts.length > 1 ? { ...doc, id: `${doc.id}-${p}` } : doc;
-        files[p] = file.name;
-      }
-      b.found = {
-        list: got.lista ?? b.found.list,
-        plan: got.pauta ?? b.found.plan,
-        conversion: got.conversion ?? b.found.conversion,
-        products: got.productos ?? b.found.products,
-        docs,
-        files,
+      const found: Found = {
+        ...b.found,
+        docs: { ...b.found.docs },
+        files: { ...b.found.files },
         model: [...new Set([...b.found.model.split(', '), ...(body.model ?? 'Gemini').split(', ')].filter(Boolean))].join(', '),
       };
+      for (const p of parts) {
+        const prev = b.found.docs[p];
+        // Un documento propio (p. ej. la lista del mercado) no lo pisa la misma parte que otro PDF trae
+        // de pasada (las páginas de productos de la pauta), elija el orden que elija el usuario.
+        if (parts.length > 1 && prev && !isExtra(prev.id, p)) {
+          b.kept.push(`${file.name} también trae ${PART_NAMES[p]}; se usa la de ${b.found.files[p]}, que es un documento propio.`);
+          continue;
+        }
+        found.docs[p] = parts.length > 1 ? { ...doc, id: `${doc.id}-${p}` } : doc;
+        found.files[p] = file.name;
+        Object.assign(found, { [FOUND_KEY[p]]: got[p] });
+      }
+      b.found = found;
     }
     batch.current = null;
+    // Lo mismo frente a las guías ya guardadas: las páginas de productos de una pauta nueva no sustituyen
+    // a la guía de productos que se subió como documento propio.
+    for (const p of ['conversion', 'productos'] as const) {
+      const doc = b.found.docs[p];
+      const saved = currentDoc(data, p);
+      if (doc && isExtra(doc.id, p) && saved && !isExtra(saved.id, p)) {
+        b.kept.push(`${b.found.files[p]} también trae ${PART_NAMES[p]}, pero se conserva la que ya tienes (${saved.title}), que es un documento propio. Para cambiarla, sube su PDF.`);
+        const docs = { ...b.found.docs };
+        const files = { ...b.found.files };
+        delete docs[p];
+        delete files[p];
+        b.found = { ...b.found, [FOUND_KEY[p]]: null, docs, files };
+      }
+    }
+    if (b.kept.length && !b.found.list && !b.found.plan && !b.found.conversion && !b.found.products) {
+      return setPhase({ step: 'elegir', error: b.kept.join(' ') });
+    }
     if (!b.found.list && !b.found.plan && !b.found.conversion && !b.found.products) {
       return setPhase({ step: 'elegir', error: 'Ninguno de estos PDF parece un documento de tu nutricionista.' });
     }
@@ -199,7 +258,7 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
         error: 'Este PDF es una pauta, pero todavía no tienes la lista de alimentos. Sube primero la lista (o un PDF que traiga las dos cosas) y después esta pauta.',
       });
     }
-    setPhase({ step: 'revisar', ...b.found, skipped: b.skipped });
+    setPhase({ step: 'revisar', ...b.found, skipped: b.skipped, kept: b.kept });
   }
 
   const intro = {
@@ -247,6 +306,7 @@ export function ImportScreen({ bare = false }: { bare?: boolean }) {
           hadDiet={!!data.diet}
           dataAfterGuides={applyFound(data, phase, null)}
           skipped={phase.skipped}
+          kept={phase.kept}
           onDiscard={() => setPhase({ step: 'elegir' })}
           onConfirm={(plan) => {
             update((d) => applyFound(d, phase, plan));
@@ -278,23 +338,19 @@ function PdfDrop({ onFiles }: { onFiles: (f: File[]) => void }) {
 }
 
 function Progress({ phase, onCancel }: { phase: Extract<Phase, { step: 'subiendo' | 'analizando' }>; onCancel: () => void }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const steps = ['Subir el PDF', 'Identificar el documento', 'Leer tablas y pauta', 'Revisar lo extraído'];
-  const seconds = phase.step === 'analizando' ? Math.round((now - phase.since) / 1000) : 0;
-  const current = phase.step === 'subiendo' ? 0 : seconds < 20 ? 1 : 2;
+  // El porcentaje es de lecturas terminadas: Gemini no informa de su avance dentro de cada una.
+  const percent = phase.step === 'subiendo' ? phase.percent : phase.total ? Math.round((phase.done / phase.total) * 100) : 0;
+  const step = phase.step === 'analizando' && (phase.total ? `Paso ${phase.done + 1} de ${phase.total}: ${phase.current}` : phase.current);
   return (
     <section className="panel loader" aria-live="polite" aria-busy="true">
       <div className="spinner" aria-hidden="true" />
-      <p className="loader-title">{phase.step === 'subiendo' ? `Subiendo el PDF… ${phase.percent} %` : `Gemini está leyendo el documento… ${seconds} s`}</p>
+      <p className="loader-title">{phase.step === 'subiendo' ? `Subiendo el PDF… ${percent} %` : `Gemini está leyendo el documento… ${percent} %`}</p>
+      <div className="bar import-bar" role="progressbar" aria-label={phase.step === 'subiendo' ? 'Subida del PDF' : 'Lectura del PDF'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
       <p className="small">{phase.label}</p>
-      <p className="muted small">{phase.step === 'analizando' ? 'Puede tardar de uno a varios minutos: primero identifica qué contiene y luego lo transcribe. Si Gemini está saturado, se reintenta solo.' : 'Preparando el envío.'}</p>
-      <ol className="steps-progress">
-        {steps.map((s, k) => <li key={s} className={k < current ? 'done' : k === current ? 'now' : ''}>{s}</li>)}
-      </ol>
+      {step && <p className="small"><b>{step}</b></p>}
+      <p className="muted small">{phase.step === 'analizando' ? 'Una lectura para identificar el documento y otra por cada parte que trae (pauta, crudo a cocido, productos). Cada una puede tardar varios minutos; si Gemini está saturado, se reintenta solo.' : 'Preparando el envío.'}</p>
       <div>
         <button className="btn" onClick={onCancel}>Cancelar</button>
       </div>
@@ -313,15 +369,16 @@ const Doubts = ({ doubts }: { doubts: { text: string; page: number }[] }) =>
     <details className="panel">
       <summary><h3>Dudas detectadas ({doubts.length})</h3></summary>
       <ul className="rules">{doubts.map((d, k) => <li key={k}>{d.text} <span className="source">pág. {d.page}</span></li>)}</ul>
-      <p className="muted small">Quedarán en Mi dieta → Dudas de la importación.</p>
+      <p className="muted small">Quedarán en Dudas de la importación (Ajustes → Dudas).</p>
     </details>
   );
 
 const PART_NAMES: Record<Part, string> = { lista: 'la lista de alimentos', pauta: 'una pauta', conversion: 'la tabla de crudo a cocido', productos: 'la guía de productos recomendados' };
 
-function Review({ found, skipped, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
+function Review({ found, skipped, kept, hadDiet, dataAfterGuides, onDiscard, onConfirm }: {
   found: Found;
   skipped: string[];
+  kept: string[];
   hadDiet: boolean;
   /** Datos tras aplicar lista y guías, para comprobar enlaces de la pauta y de la tabla de cocción. */
   dataAfterGuides: AppData;
@@ -336,7 +393,7 @@ function Review({ found, skipped, hadDiet, dataAfterGuides, onDiscard, onConfirm
     ? { label: parts.length > 1 ? 'Guardar todo' : 'Usar esta pauta', title: 'Sustituir tu pauta', message: `Esta pauta pasará a ser la tuya${parts.length > 1 ? ' y se guardará el resto del documento' : ''}. Se conservan lo que has planificado y comido, tus recetas y tus alimentos. Los platos de la pauta anterior que ya hayas usado pasan a tus recetas propias.` }
     : list && parts.length === 1
       ? { label: 'Guardar lista', title: 'Guardar la lista', message: hadDiet ? 'Se guardará esta lista y tu pauta pasará a usarla. Las equivalencias de listas anteriores se conservan como historial.' : 'Se guardará la lista de alimentos. Después podrás subir tu pauta.' }
-      : { label: parts.length > 1 ? 'Guardar todo' : 'Guardar guía', title: 'Guardar', message: 'Se guardará como guía de consulta en Mi dieta, junto con su PDF original. Si ya tenías una versión anterior, esta la sustituye.' };
+      : { label: parts.length > 1 ? 'Guardar todo' : 'Guardar guía', title: 'Guardar', message: 'Se guardará como guía de consulta en Documentos, junto con su PDF original. Si ya tenías una versión anterior, esta la sustituye.' };
 
   return (
     <div className="stack-lg">
@@ -350,6 +407,7 @@ function Review({ found, skipped, hadDiet, dataAfterGuides, onDiscard, onConfirm
           <p>Este PDF contiene <b>{what}</b>.</p>
         )}
         {skipped.length > 0 && <p className="note warn"><Icon name="aviso" size={16} /> No parecen documentos de tu nutricionista y no se importan: {skipped.join(', ')}.</p>}
+        {kept.map((k) => <p key={k} className="note"><Icon name="aviso" size={16} /> {k}</p>)}
         <p className="muted small">Leído con {found.model}.</p>
       </section>
 

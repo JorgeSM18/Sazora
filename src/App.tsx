@@ -1,3 +1,4 @@
+import { Fragment, useEffect } from 'react';
 import { AppShell } from './ui/AppShell';
 import { useRoute } from './ui/router';
 import { HomeScreen } from './ui/screens/HomeScreen';
@@ -13,6 +14,8 @@ import { NotFound } from './ui/screens/NotFound';
 import { WelcomeScreen } from './ui/screens/WelcomeScreen';
 import { GuideRoute } from './ui/screens/GuidesScreen';
 import { ShoppingScreen } from './ui/screens/ShoppingScreen';
+import { ReviewScreen } from './ui/screens/ReviewScreen';
+import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { useStore } from './state/store';
 
 export function App() {
@@ -20,6 +23,11 @@ export function App() {
   const [section = 'inicio', id, action, ...rest] = segments;
   const date = query.get('fecha');
   const { data } = useStore();
+  // Al cambiar de pantalla se empieza arriba (con rutas por hash, el navegador conserva el scroll de la anterior).
+  const path = segments.join('/');
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [path]);
 
   // La app vive en "/" con rutas tras "#". Cualquier otra ruta del servidor es un 404.
   const atRoot = ['/', '/index.html'].includes(window.location.pathname);
@@ -33,6 +41,8 @@ export function App() {
     else if (section === 'dieta' && !id) screen = <DietScreen />;
     else if (section === 'dieta' && id === 'importar' && !action) screen = <ImportScreen />;
     else if (section === 'guias' && !action) screen = <GuideRoute id={id} />;
+    else if (section === 'dudas' && !id) screen = <ReviewScreen />;
+    else if (section === 'ajustes' && !id) screen = <SettingsScreen />;
     else if (section === 'compra' && !id) screen = <ShoppingScreen />;
     else if (section === 'plan' && !id) screen = <PlannerScreen dateParam={date} />;
     else if (section === 'recetas' && !id) screen = <RecipesScreen />;
@@ -44,5 +54,7 @@ export function App() {
   }
 
   // El importador cuelga de Documentos en el menú.
-  return <AppShell section={section === 'dieta' && id === 'importar' ? 'guias' : section}>{screen}</AppShell>;
+  // key: cada ruta monta su pantalla de cero. Si no, React reutiliza la anterior con su estado
+  // (p. ej. "Nueva receta" aparecía rellena con la receta que se acababa de editar).
+  return <AppShell section={section === 'dieta' && id === 'importar' ? 'guias' : section}><Fragment key={path}>{screen}</Fragment></AppShell>;
 }

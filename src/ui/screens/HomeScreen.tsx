@@ -18,6 +18,7 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
   const pendingReview = reviewItems(data).filter((r) => !r.resolved).length;
   const issueSubjects = [...new Set([...s.planned.issues, ...s.consumed.issues].map((i) => i.subject))];
   const planLink = href(`/plan?fecha=${date}`);
+  const pendingItems = s.meals.reduce((n, m) => n + m.pending.length, 0);
 
   return (
     <div className="stack-lg">
@@ -32,6 +33,14 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
           <h2 id="h-comidas">Comidas</h2>
           <a className="btn small" href={planLink}>Abrir el plan del día</a>
         </div>
+        {s.meals.every((m) => m.plan.length === 0 && m.intake.length === 0) ? (
+          <p className="empty">Nada planificado ni registrado este día. En el plan puedes añadir lo que vas a comer o registrar directamente lo que has comido.</p>
+        ) : (
+          <p className="muted small">
+            {s.meals.filter((m) => m.intake.length > 0).length} de {s.meals.length} comidas con algo registrado
+            {pendingItems > 0 && ` · ${pendingItems} ${pendingItems === 1 ? 'elemento previsto' : 'elementos previstos'} sin registrar`}
+          </p>
+        )}
         <ul className="meal-status">
           {s.meals.map((m) => {
             const registered = m.intake.length > 0;
@@ -50,6 +59,11 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
                       Previsto: <TotalsLine totals={m.planned} showMacros={false} />
                     </span>
                   )}
+                  {registered && (
+                    <span className="meal-detail">
+                      Comido: <TotalsLine totals={m.consumed} showMacros={false} />
+                    </span>
+                  )}
                 </a>
               </li>
             );
@@ -66,7 +80,7 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
             <p className="note warn"><Icon name="aviso" size={16} /> Datos incompletos hoy en: {issueSubjects.slice(0, 6).join(', ')}{issueSubjects.length > 6 ? '…' : ''}. <a href={href('/alimentos')}>Completar alimentos</a></p>
           )}
           {pendingReview > 0 && (
-            <p className="note"><Icon name="aviso" size={16} /> {pendingReview} dudas de la importación de tu pauta están pendientes de revisión. <a href={href('/dieta')}>Revisarlas</a></p>
+            <p className="note"><Icon name="aviso" size={16} /> {pendingReview} {pendingReview === 1 ? 'duda' : 'dudas'} de la importación de tu pauta pendientes de revisión. <a href={href('/dudas')}>Revisarlas</a></p>
           )}
         </section>
       )}

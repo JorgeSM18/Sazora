@@ -26,7 +26,8 @@ async function open(r: MemoryRepository = repo) {
 const progressRow = (label: string) =>
   screen.getAllByText(label, { selector: '.progress-label' })[0]!.closest('.progress-row') as HTMLElement;
 const mealSection = async (name: string) => (await screen.findByRole('heading', { name })).closest('section')!;
-const go = (hash: string) => act(async () => { window.location.hash = hash; });
+// jsdom avisa del hashchange en una tarea aparte: se espera a que llegue para ver ya la pantalla nueva.
+const go = (hash: string) => act(async () => { window.location.hash = hash; await new Promise((r) => setTimeout(r, 0)); });
 
 beforeEach(() => {
   repo = new MemoryRepository(fixtureData());
@@ -36,7 +37,7 @@ beforeEach(() => {
 describe('con la pauta importada', () => {
   it('abre la pauta directamente', async () => {
     await open();
-    expect(screen.getByRole('link', { name: /Plan Nutricional 1\.5/ })).toBeInTheDocument();
+    expect(screen.getByText(/Plan Nutricional 1\.5/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Comidas' })).toBeInTheDocument();
   });
 
@@ -79,6 +80,57 @@ describe('con la pauta importada', () => {
     expect(screen.getAllByRole('link', { name: 'Plan Nutricional 1.5, pág. 6' })[0]).toHaveAttribute('href', '/api/documentos/aaaaaaaaaaaaaaaa.pdf#page=6');
   });
 
+  it('Mi dieta muestra solo la pauta, con todas sus porciones; objetivos y descarga están en Ajustes', async () => {
+    const diet = fixtureData().diet!;
+    await open();
+    await go('/dieta');
+    const meals = (await screen.findByRole('heading', { name: 'Porciones por comida' })).closest('section')!;
+    for (const m of diet.meals) {
+      const card = within(meals).getByRole('heading', { level: 3, name: new RegExp(m.name) }).closest('li')!;
+      expect(within(card).getAllByRole('definition')).toHaveLength(Object.keys(m.portionTargets).length);
+    }
+    const daily = (await screen.findByRole('heading', { name: 'Porciones al día' })).closest('section')!;
+    expect(within(daily).getAllByRole('listitem')).toHaveLength(Object.keys(diet.dailyPortionTargets).length);
+    expect(screen.queryByRole('heading', { name: /Objetivos/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Descargar/ })).not.toBeInTheDocument();
+
+    await go('/ajustes');
+    expect(await screen.findByRole('heading', { name: /Objetivos de energía y macros/ })).toHaveTextContent('Sin configurar');
+    expect(screen.getByRole('button', { name: 'Descargar copia (JSON)' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Más secciones' })).getByRole('link', { name: /Documentos/ })).toHaveAttribute('href', '/#/guias');
+  });
+
+  it('busca con Gemini los datos por 100 g de los alimentos filtrados, se revisan y se guardan pendientes', async () => {
+    const user = userEvent.setup();
+    const sent: { id: string }[][] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      expect(url).toBe('/api/nutricion');
+      const { foods } = JSON.parse(String(init.body)) as { foods: { id: string }[] };
+      sent.push(foods);
+      return new Response(JSON.stringify({ items: [
+        { id: 'arroz', found: true, unit: 'g', kcal: 350, protein: 7, carbs: 78, fat: 1, source_name: 'BEDCA', source_url: 'https://www.bedca.net/', note: 'En crudo' },
+        { id: 'arroz-cocido', found: false, unit: 'g', kcal: null, protein: null, carbs: null, fat: null, source_name: '', source_url: null, note: null },
+      ] }), { status: 200 });
+    });
+    try {
+      await open();
+      await go('/alimentos');
+      await user.type(await screen.findByLabelText('Buscar'), 'arroz');
+      const targets = fixtureData().foods.filter((f) => !f.nutrition && /arroz/i.test(f.name));
+      await user.click(screen.getByRole('button', { name: `Buscar datos con Gemini (${targets.length})` }));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Buscar' }));
+      expect(await within(screen.getByRole('dialog')).findByText(/Encontrados/)).toHaveTextContent(`Encontrados 1 de ${targets.length}`);
+      expect(sent[0]!.map((f) => f.id).sort()).toEqual(targets.map((f) => f.id).sort());
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar 1' }));
+      await act(async () => {});
+      const saved = (await repo.load()) as AppData;
+      expect(saved.foods.find((f) => f.id === 'arroz')!.nutrition).toMatchObject({ per: 100, unit: 'g', status: 'pendiente', values: { kcal: 350, protein: 7, carbs: 78, fat: 1 } });
+      expect(saved.foods.find((f) => f.id === 'arroz')!.nutrition!.source).toMatch(/^BEDCA \(https:\/\/www\.bedca\.net\/\) · buscado con Gemini el .* · En crudo$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('muestra la 404 en rutas desconocidas y en fichas que ya no existen', async () => {
     await open();
     for (const route of ['/no-existe', '/plan/extra', '/recetas/abc/borrar', '/dieta/otra']) {
@@ -90,6 +142,59 @@ describe('con la pauta importada', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Esta receta ya no está' })).toBeInTheDocument();
     await go('/alimentos/alimento-borrado');
     expect(await screen.findByRole('heading', { level: 1, name: 'Este alimento ya no está' })).toBeInTheDocument();
+  });
+
+  it('crear receta: añadir ingredientes no envía la receta y "Nueva receta" no hereda la anterior', async () => {
+    const user = userEvent.setup();
+    await open();
+    await go('/recetas/nueva');
+    await user.type(await screen.findByLabelText('Nombre *'), 'Mi plato');
+    await user.click(screen.getByRole('button', { name: /Añadir alimento/ }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getAllByRole('button').find((b) => b.classList.length === 0 && b.querySelector('.pick-name'))!);
+    await user.click(within(dialog).getByRole('button', { name: 'Añadir ingrediente' }));
+    // Enter en el texto libre añade el ingrediente; no guarda la receta.
+    await user.type(screen.getByPlaceholderText(/ingrediente sin calcular/), 'Sal{Enter}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Revisa los campos marcados.')).not.toBeInTheDocument();
+    expect(screen.getByText('Sal')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Mi plato');
+    expect(repo.saves).toBe(0);
+
+    await user.click(screen.getByRole('button', { name: 'Guardar receta' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Mi plato' })).toBeInTheDocument();
+    const id = window.location.hash.split('/')[2];
+    await go(`/recetas/${id}/editar`);
+    await screen.findByRole('heading', { level: 1, name: 'Editar receta' });
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Mi plato');
+    await go('/recetas/nueva');
+    await screen.findByRole('heading', { level: 1, name: 'Nueva receta' });
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('');
+    expect(screen.getByText('Sin ingredientes todavía.')).toBeInTheDocument();
+  });
+
+  it('crear alimento: exige al menos un valor si se marcan datos nutricionales y confirma al guardar', async () => {
+    const user = userEvent.setup();
+    await open();
+    await go('/alimentos/nuevo');
+    await user.type(await screen.findByLabelText('Nombre *'), 'Pan de prueba');
+    await user.click(screen.getByRole('checkbox', { name: /Tengo datos nutricionales/ }));
+    await user.type(screen.getByLabelText('Fuente de los valores *'), 'Etiqueta');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(screen.getByText(/Rellena al menos un valor/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Energía (kcal)'), '250');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pan de prueba' })).toBeInTheDocument();
+    await act(async () => {});
+    const food = ((await repo.load()) as AppData).foods.find((f) => f.name === 'Pan de prueba')!;
+    expect(food.nutrition).toMatchObject({ per: 100, values: { kcal: 250, protein: null, carbs: null, fat: null }, source: 'Etiqueta' });
+
+    // Editar: confirma el guardado y la confirmación desaparece al volver a cambiar algo.
+    await user.type(screen.getByLabelText('Proteínas (g)'), '9,5');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByText('Guardado', { selector: '.ok-text' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Grasas (g)'), '3');
+    expect(screen.queryByText('Guardado', { selector: '.ok-text' })).not.toBeInTheDocument();
   });
 
   it('formulario inválido: no guarda una receta sin nombre ni ingredientes', async () => {
@@ -130,16 +235,23 @@ let next: { kind: string; foodList: unknown; plan: unknown; conversion?: unknown
 let finish: () => void = () => {};
 let uploads = 0;
 class FakeXHR {
-  status = 200; response: unknown = null; responseType = '';
+  status = 200; responseText = ''; responseType = '';
   upload: { onprogress?: (e: unknown) => void; onload?: () => void } = {};
-  onload?: () => void; onerror?: () => void; onabort?: () => void;
+  onload?: () => void; onerror?: () => void; onabort?: () => void; onprogress?: () => void;
   open() {} setRequestHeader() {} abort() { this.onabort?.(); }
+  getResponseHeader(h: string) { return h === 'content-type' ? 'application/x-ndjson' : null; }
   send(body: string) {
     expect(JSON.parse(body).pdfBase64).toBeTruthy();
     this.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 1 });
     this.upload.onload?.();
     const id = `pdf-${++uploads}`; // el servidor real usa el hash del PDF
-    finish = () => { this.response = { ...next, model: 'gemini-test', document: { id, url: '/api/documentos/0123456789abcdef.pdf' } }; this.onload?.(); };
+    // Como el servidor real: avance por líneas y, al final, { status, body }.
+    this.responseText = `${JSON.stringify({ type: 'progreso', done: 1, total: 2, label: 'Leyendo la pauta' })}\n`;
+    this.onprogress?.();
+    finish = () => {
+      this.responseText += `${JSON.stringify({ status: 200, body: { ...next, model: 'gemini-test', document: { id, url: '/api/documentos/0123456789abcdef.pdf' } } })}\n`;
+      this.onload?.();
+    };
   }
 }
 
@@ -150,7 +262,9 @@ describe('empezar de cero', () => {
 
   const upload = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.upload(await screen.findByLabelText('PDF de la nutricionista'), new File(['%PDF-1.4 prueba'], 'doc.pdf', { type: 'application/pdf' }));
-    expect(await screen.findByText(/Gemini está leyendo el documento/)).toBeInTheDocument();
+    expect(await screen.findByText('Gemini está leyendo el documento… 50 %')).toBeInTheDocument();
+    expect(screen.getByText('Paso 2 de 2: Leyendo la pauta')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Lectura del PDF' })).toHaveAttribute('aria-valuenow', '50');
     await act(async () => finish());
   };
 
@@ -193,7 +307,19 @@ describe('empezar de cero', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Mi pauta' })).toBeInTheDocument();
-    expect(screen.getByText(/Una celda se lee mal/)).toBeInTheDocument();
+    // Las dudas pendientes se avisan en Mi dieta y se revisan en su propia pantalla.
+    const notice = screen.getByRole('link', { name: /Hay \d+ dudas? de la importación por revisar/ });
+    const count = Number(notice.textContent!.match(/\d+/)![0]);
+    await user.click(notice);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dudas de la importación' })).toBeInTheDocument();
+    const pending = screen.getAllByRole('checkbox', { checked: false });
+    expect(pending).toHaveLength(count); // el aviso cuenta las dudas reales
+    expect(screen.getByRole('checkbox', { name: /Una celda se lee mal/ })).toBeInTheDocument();
+    for (const c of pending) await user.click(c);
+    expect(screen.getByRole('heading', { name: new RegExp(`Revisadas ${count}`) })).toBeInTheDocument();
+    await go('/dieta');
+    await screen.findByRole('heading', { level: 1, name: 'Mi pauta' });
+    expect(screen.queryByRole('link', { name: /por revisar/ })).not.toBeInTheDocument();
     // Con todo subido aparece el menú, con Documentos para sustituir lo subido.
     await user.click(within(screen.getByRole('navigation', { name: 'Secciones' })).getByRole('link', { name: 'Documentos' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Documentos' })).toBeInTheDocument();
@@ -300,6 +426,46 @@ describe('guías', () => {
     expect(await screen.findByText('1 natilla = 1 carbohidratos + 1,5 proteína magra')).toBeInTheDocument();
     await go('/guias/lista');
     expect(await screen.findByText('Cocido: 50 g cocido = 20 g crudo')).toBeInTheDocument();
+  });
+
+  it('las páginas de productos de la pauta no sustituyen a la lista del mercado', async () => {
+    const user = userEvent.setup();
+    await open();
+    await go('/dieta/importar');
+    const product = (name: string) => ({ name, category: 'Varios', amount: 1, unit: 'unidad', unit_label: null, portions: { proteinaMagra: 1 }, raw: `1 ${name} = 1 proteína`, page: 1 });
+    const mercado = { title: 'Lista del mercado', author: null, doubts: [], stores: [{ store: 'Mercadona', products: [product('Yogur')] }, { store: 'Alcampo', products: [product('Queso')] }] };
+    const enLaPauta = { title: 'Plan', author: null, doubts: [], stores: [{ store: 'General', products: [product('Pavo')] }] };
+    const pdf = (name: string) => new File(['%PDF-1.4'], name, { type: 'application/pdf' });
+    const serve = async (n: typeof next) => {
+      await screen.findByText(/Gemini está leyendo/);
+      next = n;
+      await act(async () => finish());
+    };
+
+    // A la vez: primero la lista del mercado y después la pauta, que también trae productos.
+    await user.upload(await screen.findByLabelText('PDF de la nutricionista'), [pdf('lista-mercado.pdf'), pdf('plan.pdf')]);
+    await serve({ kind: 'productos', foodList: null, plan: null, products: mercado });
+    await serve({ kind: 'x', foodList: null, plan: PLAN, products: enLaPauta });
+    expect(await screen.findByText(/plan.pdf también trae la guía de productos recomendados; se usa la de lista-mercado.pdf/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Guardar todo' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
+    await act(async () => {});
+    let saved = (await repo.load()) as AppData;
+    expect(saved.documents.filter((d) => d.kind === 'productos').map((d) => [d.id, d.title])).toEqual([['pdf-1', 'Lista del mercado']]);
+
+    // Más tarde, la pauta sola: se guarda la pauta y se conserva la lista del mercado.
+    await go('/dieta/importar');
+    await user.upload(await screen.findByLabelText('PDF de la nutricionista'), pdf('plan-v2.pdf'));
+    await serve({ kind: 'x', foodList: null, plan: PLAN, products: enLaPauta });
+    expect(await screen.findByText(/se conserva la que ya tienes \(Lista del mercado\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Usar esta pauta' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
+    await act(async () => {});
+    saved = (await repo.load()) as AppData;
+    expect(saved.documents.filter((d) => d.kind === 'productos').map((d) => d.id)).toEqual(['pdf-1']);
+    expect(saved.diet!.documents).toContain('pdf-1');
+    await go('/guias/productos');
+    expect(await screen.findByRole('heading', { name: 'Alcampo' })).toBeInTheDocument();
   });
 });
 

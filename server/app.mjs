@@ -69,12 +69,13 @@ const cookieToken = (req) =>
  * @param {object} deps
  * @param {ReturnType<import('./db.mjs').openDb>} deps.db
  * @param {(input: { pdfBase64: string, catalog: {id: string, name: string}[] }) => Promise<object>} deps.importDocument
+ * @param {(input: { foods: {id: string, name: string, brand?: string, state?: string}[] }) => Promise<object>} [deps.lookupNutrition]  búsqueda web de datos nutricionales
  * @param {string} deps.docsDir  carpeta de PDF importados (una subcarpeta por usuario)
  * @param {string} deps.distDir  web compilada
  * @param {boolean} [deps.secureCookies]
  * @param {string} [deps.registrationCode]  código de invitación; sin él, el registro está desactivado
  */
-export function createApp({ db, importDocument, docsDir, distDir, secureCookies = false, registrationCode }) {
+export function createApp({ db, importDocument, lookupNutrition, docsDir, distDir, secureCookies = false, registrationCode }) {
   const attempts = new Map(); // intentos fallidos (login, registro): clave → { n, until }
   const MAX_FAILS = 5;
   const WINDOW = 10 * 60_000;
@@ -149,6 +150,27 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
     }
   }
 
+  /** Busca en la web los datos nutricionales de unos alimentos. No guarda nada: la app los revisa y los guarda. */
+  async function nutrition(req, res, user) {
+    if (!lookupNutrition) throw new HttpError(404, 'Ruta no encontrada.');
+    const input = await readJson(req, MB);
+    const foods = (Array.isArray(input.foods) ? input.foods : [])
+      .slice(0, 20)
+      .map((f) => ({ id: String(f?.id ?? '').slice(0, 120), name: String(f?.name ?? '').slice(0, 120), brand: f?.brand ? String(f.brand).slice(0, 60) : undefined, state: f?.state ? String(f.state).slice(0, 20) : undefined }))
+      .filter((f) => f.id && f.name);
+    if (!foods.length) throw new HttpError(400, 'Faltan los alimentos.');
+    if (importing.has(user.id)) throw new HttpError(429, 'Ya hay una consulta a Gemini en curso. Espera a que termine.');
+    importing.add(user.id);
+    try {
+      send(res, 200, await lookupNutrition({ foods }));
+    } catch (e) {
+      const timeout = e?.name === 'TimeoutError';
+      send(res, e?.quota ? 429 : e?.busy ? 503 : 502, { error: timeout ? 'Gemini ha tardado demasiado. Inténtalo de nuevo.' : e.message });
+    } finally {
+      importing.delete(user.id);
+    }
+  }
+
   async function importPdfFor(req, res, user) {
     const input = await readJson(req, 60 * MB);
     const pdf = Buffer.from(String(input.pdfBase64 ?? ''), 'base64');
@@ -159,12 +181,18 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
     const dir = join(docsDir, String(user.id));
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, `${sha}.pdf`), pdf);
+    // Con "accept: application/x-ndjson" la respuesta va por líneas: el avance de cada lectura según empieza
+    // ({ type: 'progreso', done, total, label }) y, al final, { status, body } con lo que sería la respuesta normal.
+    const stream = String(req.headers.accept).includes('application/x-ndjson');
+    const finish = (status, body) => (stream ? res.end(`${JSON.stringify({ status, body })}\n`) : send(res, status, body));
+    if (stream) res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store', ...SECURITY });
+    const onProgress = (p) => stream && !res.writableEnded && res.write(`${JSON.stringify({ type: 'progreso', ...p })}\n`);
     try {
-      const result = await importDocument({ pdfBase64: pdf.toString('base64'), catalog });
-      send(res, 200, { ...result, document: { id: `pdf-${sha}`, url: `/api/documentos/${sha}.pdf` } });
+      const result = await importDocument({ pdfBase64: pdf.toString('base64'), catalog, onProgress });
+      finish(200, { ...result, document: { id: `pdf-${sha}`, url: `/api/documentos/${sha}.pdf` } });
     } catch (e) {
       const timeout = e?.name === 'TimeoutError';
-      send(res, e?.busy ? 503 : 502, { error: timeout ? 'Gemini ha tardado demasiado. Inténtalo de nuevo.' : e.message, retryable: timeout || !!e?.busy });
+      finish(e?.quota ? 429 : e?.busy ? 503 : 502, { error: timeout ? 'Gemini ha tardado demasiado. Inténtalo de nuevo.' : e.message, retryable: timeout || !!e?.busy });
     }
   }
 
@@ -305,6 +333,7 @@ export function createApp({ db, importDocument, docsDir, distDir, secureCookies 
         return send(res, r.conflict ? 409 : 200, r);
       }
       if (route === 'POST /api/importar') return await importPdf(req, res, requireUser(req));
+      if (route === 'POST /api/nutricion') return await nutrition(req, res, requireUser(req));
       if (url.pathname === '/api/listas' || url.pathname.startsWith('/api/listas/')) return await shopping(req, res, url, requireUser(req));
 
       const doc = url.pathname.match(/^\/api\/documentos\/([a-f0-9]{16})\.pdf$/);

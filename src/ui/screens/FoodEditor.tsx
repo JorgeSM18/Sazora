@@ -80,6 +80,7 @@ type NField = Record<(typeof NUTRIENT_KEYS)[number], string>;
 
 function FoodForm({ food, editableIdentity, onSave }: { food?: Food; editableIdentity: boolean; onSave: (f: Food) => void }) {
   const n = food?.nutrition;
+  const { saveState } = useStore();
   const [name, setName] = useState(food?.name ?? '');
   const [brand, setBrand] = useState(food?.brand ?? '');
   const [state, setState] = useState<FoodState>(food?.state ?? 'listo');
@@ -93,12 +94,14 @@ function FoodForm({ food, editableIdentity, onSave }: { food?: Food; editableIde
   const [status, setStatus] = useState<Verification>(n?.status === 'verificado' ? 'verificado' : 'pendiente');
   const [notes, setNotes] = useState(food?.origin === 'usuario' ? food.notes ?? '' : '');
   const [submitted, setSubmitted] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const parsed = parseNutrients(fields);
   const errors = {
     name: editableIdentity ? validateName(name) : null,
     per: hasNutrition ? validateQuantity(per) : null,
     source: hasNutrition && !source.trim() ? 'Indica de dónde salen los valores (etiqueta, base de datos…).' : null,
+    values: hasNutrition && NUTRIENT_KEYS.every((k) => parsed.values[k] === null && !parsed.errors[k]) ? 'Rellena al menos un valor o desmarca “Tengo datos nutricionales”.' : null,
     ...(hasNutrition ? parsed.errors : {}),
   };
   const valid = Object.values(errors).every((e) => !e);
@@ -108,10 +111,12 @@ function FoodForm({ food, editableIdentity, onSave }: { food?: Food; editableIde
     <form
       className="stack"
       noValidate
+      onChange={() => setSaved(false)}
       onSubmit={(e) => {
         e.preventDefault();
         setSubmitted(true);
         if (!valid) return;
+        setSaved(true);
         const base: Food = food ?? { id: newId('food'), name: '', state, equivalences: [], origin: 'usuario', status: 'pendiente' };
         onSave({
           ...base,
@@ -155,6 +160,7 @@ function FoodForm({ food, editableIdentity, onSave }: { food?: Food; editableIde
               <label className="field span"><span>Fuente de los valores *</span><input value={source} onChange={(e) => setSource(e.target.value)} placeholder="p. ej. etiqueta del envase" aria-invalid={!!show(errors.source)} />{show(errors.source) && <span className="field-error" role="alert">{errors.source}</span>}</label>
               <label className="field"><span>Estado de verificación</span><select value={status} onChange={(e) => setStatus(e.target.value as Verification)}><option value="verificado">Verificado</option><option value="pendiente">Pendiente de revisión</option></select></label>
             </div>
+            {show(errors.values) && <p className="field-error" role="alert">{errors.values}</p>}
             <p className="muted small">Deja vacío lo que no sepas: se mostrará como desconocido, nunca como 0. Los valores de un alimento crudo no sirven para su versión cocinada.</p>
           </>
         ) : (
@@ -163,7 +169,12 @@ function FoodForm({ food, editableIdentity, onSave }: { food?: Food; editableIde
       </section>
 
       {submitted && !valid && <p className="field-error" role="alert">Revisa los campos marcados.</p>}
-      <button className="btn primary" type="submit">Guardar</button>
+      <div className="row">
+        <button className="btn primary" type="submit">Guardar</button>
+        {/* Lo que dice el servidor, no solo el formulario: si falla, lo avisa el banner de error. */}
+        {saved && saveState === 'guardado' && <span className="ok-text" role="status">Guardado</span>}
+        {saved && saveState === 'guardando' && <span className="muted small" role="status">Guardando…</span>}
+      </div>
     </form>
   );
 }

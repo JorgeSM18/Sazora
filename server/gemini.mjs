@@ -2,6 +2,9 @@
 // Dos tareas: 1) clasificar el PDF y extraer la lista de alimentos si la trae; 2) extraer la pauta.
 // Funciones puras para construir peticiones y leer respuestas; la red está en importDocument.
 
+import * as http from 'node:http';
+import * as https from 'node:https';
+
 export const GROUPS = ['lacteos', 'vegetales', 'frutas', 'carbohidratos', 'proteinaMagra', 'proteinaSemimagra', 'grasas'];
 const STATES = ['crudo', 'cocido', 'escurrido', 'listo', 'otro'];
 /** Partes que puede traer un PDF de la nutricionista. */
@@ -313,6 +316,60 @@ export function buildProductsRequest({ pdfBase64, model }) {
   };
 }
 
+// ── Datos nutricionales buscados en la web ─────────────────────────────────
+
+const nullableMacro = (description) => ({ ...nullableNumber, description });
+
+export const NUTRITION_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'El id del alimento tal como se ha dado.' },
+          found: { type: 'boolean', description: 'true solo si has encontrado una fuente fiable para este alimento.' },
+          unit: { type: 'string', enum: ['g', 'ml'], description: 'Valores por 100 g, o por 100 ml si la fuente lo da así (bebidas).' },
+          kcal: nullableMacro('Energía en kcal por 100 g/ml.'),
+          protein: nullableMacro('Proteínas en g por 100 g/ml.'),
+          carbs: nullableMacro('Hidratos de carbono en g por 100 g/ml.'),
+          fat: nullableMacro('Grasas en g por 100 g/ml.'),
+          source_name: { type: 'string', description: 'Fuente concreta: web del supermercado o fabricante, Open Food Facts, BEDCA, USDA…' },
+          source_url: nullableString,
+          note: { ...nullableString, description: 'Aclaraciones: producto parecido y no el exacto, valores en seco/crudo, etc.' },
+        },
+        required: ['id', 'found', 'unit', 'kcal', 'protein', 'carbs', 'fat', 'source_name', 'source_url', 'note'],
+      },
+    },
+  },
+  required: ['items'],
+};
+
+const NUTRITION_INSTRUCTIONS = `Busca en la web la información nutricional por 100 g (o 100 ml) de cada alimento de la lista.
+- Si tiene marca o supermercado, busca ese producto exacto: primero la web del supermercado o del fabricante, después Open Food Facts.
+- Si es un alimento genérico, usa una base de datos de composición de alimentos (BEDCA, USDA FoodData Central). Indica si el valor es en crudo, cocido o seco.
+- Copia los valores de la fuente; no los calcules ni los estimes. Un nutriente que la fuente no da va a null.
+- Si no encuentras una fuente fiable, found=false y todos los valores a null. Es mejor no encontrar que inventar.
+- Si solo encuentras un producto parecido, dilo en note.`;
+
+/** `foods`: [{ id, name, brand?, state? }]. Búsqueda de Google + respuesta JSON (Gemini 3). */
+export function buildNutritionRequest({ foods, model }) {
+  const lines = foods.map((f) => `${f.id}: ${f.name}${f.brand ? ` (${f.brand})` : ''}${f.state ? ` [${f.state}]` : ''}`);
+  return {
+    model,
+    system_instruction: NUTRITION_INSTRUCTIONS,
+    input: [{ type: 'text', text: `Alimentos (id: nombre (marca o supermercado) [estado]):\n${lines.join('\n')}` }],
+    tools: [{ type: 'google_search' }],
+    response_format: jsonFormat(NUTRITION_SCHEMA),
+  };
+}
+
+export async function lookupNutrition({ foods, ...opts }) {
+  const r = await generate({ ...opts, build: (model) => buildNutritionRequest({ foods, model }) });
+  return { ...r.result, model: r.model };
+}
+
 /** Mismo criterio de ids que la app (src/data/fixtures/util.ts → slug). */
 export const slug = (s) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -346,24 +403,59 @@ const RETRYABLE = new Set([429, 500, 503]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class GeminiError extends Error {
-  constructor(message, { status, busy = false } = {}) {
+  constructor(message, { status, busy = false, quota = false } = {}) {
     super(message);
     this.status = status;
     this.busy = busy;
+    /** Cuota diaria agotada: no se libera en minutos, reintentar ese modelo no sirve. */
+    this.quota = quota;
   }
 }
 
-async function callOnce({ body, apiKey, signal, fetchImpl }) {
-  const res = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(body),
-    signal,
+/**
+ * 429 de cuota agotada ("... 20 requests per day ... retry in 6h25m20s", o solo "You exceeded your current quota"):
+ * no se libera en segundos. Solo un límite por minuto merece reintento con espera.
+ */
+const dailyQuota = (msg) => (/per minute|PerMinute/i.test(msg) ? null : { retryIn: msg.match(/retry in ([\dhms.]+)/i)?.[1]?.replace(/\.\d+s$/, 's') });
+
+/**
+ * POST con node:https. No se usa fetch porque corta a los 300 s sin cabeceras de respuesta ("fetch failed"),
+ * y leer un PDF grande puede tardar más: aquí el único límite es `signal`.
+ */
+export function postJson(url, { headers, body, signal }) {
+  return new Promise((resolve, reject) => {
+    const req = (url.startsWith('https:') ? https : http).request(url, { method: 'POST', headers: { ...headers, 'content-length': Buffer.byteLength(body) }, signal }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('error', reject);
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, statusText: res.statusMessage ?? '', json: async () => JSON.parse(text) });
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
   });
+}
+
+async function callOnce({ body, apiKey, signal, fetchImpl }) {
+  let res;
+  try {
+    res = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason ?? e; // tiempo agotado o cancelado: se informa como tal
+    throw new GeminiError(`Se perdió la conexión con Gemini (${e.code ?? e.message}). Inténtalo de nuevo.`);
+  }
   const json = await res.json().catch(() => null);
   if (!res.ok) {
     const msg = json?.error?.message ?? json?.errors?.[0]?.message ?? res.statusText;
-    throw new GeminiError(`Error de la API de Gemini (${res.status}): ${msg}`, { status: res.status, busy: RETRYABLE.has(res.status) });
+    const quota = res.status === 429 && dailyQuota(msg);
+    throw Object.assign(new GeminiError(`Error de la API de Gemini (${res.status}): ${msg}`, { status: res.status, busy: RETRYABLE.has(res.status) && !quota, quota: !!quota }), { retryIn: quota?.retryIn });
   }
   return parseResponse(json);
 }
@@ -373,20 +465,29 @@ async function callOnce({ body, apiKey, signal, fetchImpl }) {
  * creciente (2 s, 6 s…) y pasa al siguiente; si un modelo ya no existe (404), lo salta.
  * Devuelve { result, model }.
  */
-export async function generate({ build, apiKey, models, signal, attempts = 2, fetchImpl = fetch, wait = sleep, log = console.warn }) {
+export async function generate({ build, apiKey, models, signal, attempts = 2, fetchImpl = postJson, wait = sleep, log = console.warn }) {
   let last;
+  const exhausted = []; // modelos sin cuota diaria
   for (const model of models) {
     for (let i = 0; i < attempts; i++) {
       try {
         return { result: await callOnce({ body: build(model), apiKey, signal, fetchImpl }), model };
       } catch (e) {
-        if (!(e instanceof GeminiError) || !(e.busy || e.status === 404)) throw e;
+        if (!(e instanceof GeminiError) || !(e.busy || e.quota || e.status === 404)) throw e;
         log(`[gemini] ${model} intento ${i + 1}: ${e.message}`);
         last = e;
-        if (e.status === 404) break;
+        if (e.quota) exhausted.push({ model, retryIn: e.retryIn });
+        if (e.status === 404 || e.quota) break;
         if (i < attempts - 1) await wait(2000 * 3 ** i);
       }
     }
+  }
+  if (exhausted.length === models.length) {
+    const when = exhausted[0].retryIn ? ` Google indica que se libera en ${exhausted[0].retryIn}.` : '';
+    throw new GeminiError(
+      `Se ha agotado la cuota de Gemini en todos los modelos (${models.join(', ')}).${when} Vuelve a intentarlo ${when ? 'entonces' : 'más tarde (la cuota gratuita es diaria)'} o activa la facturación en Google AI Studio.`,
+      { status: 429, quota: true },
+    );
   }
   throw new GeminiError(
     `Gemini está saturado ahora mismo (${models.length * attempts} intentos con ${models.join(', ')}). Es temporal: prueba de nuevo en unos minutos.`,
@@ -398,17 +499,22 @@ export async function generate({ build, apiKey, models, signal, attempts = 2, fe
  * Lee un PDF de la nutricionista: identifica qué partes trae y extrae cada una con su esquema.
  * La lista va en la primera lectura; la pauta y la tabla de crudo a cocido se leen con el catálogo
  * de alimentos conocidos (incluida la lista del propio PDF) para enlazarlos.
+ * `onProgress({ done, total, label })`: antes de cada lectura (`total` es null hasta saber qué partes trae).
  * Devuelve { contains, foodList, plan, conversion, products, model }.
  */
-export async function importDocument({ pdfBase64, catalog, ...opts }) {
+export async function importDocument({ pdfBase64, catalog, onProgress = () => {}, ...opts }) {
+  onProgress({ done: 0, total: null, label: 'Identificando el documento' });
   const first = await generate({ ...opts, build: (model) => buildListRequest({ pdfBase64, model }) });
   const c = first.result?.contains ?? {};
   const contains = Object.fromEntries(PARTS.map((p) => [p, c[p] === true]));
   const foodList = contains.lista ? first.result.food_list ?? null : null;
   const fullCatalog = [...catalog, ...listCatalog(foodList)];
   const models = [first.model];
+  const toRead = ['pauta', 'conversion', 'productos'].filter((p) => contains[p]);
+  const LABELS = { pauta: 'Leyendo la pauta', conversion: 'Leyendo la tabla de crudo a cocido', productos: 'Leyendo los productos recomendados' };
   const read = async (part, build) => {
     if (!contains[part]) return null;
+    onProgress({ done: 1 + toRead.indexOf(part), total: 1 + toRead.length, label: LABELS[part] });
     const r = await generate({ ...opts, build });
     models.push(r.model);
     return r.result;

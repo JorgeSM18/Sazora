@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createApp } from './app.mjs';
 import { openDb } from './db.mjs';
-import { importDocument } from './gemini.mjs';
+import { importDocument, lookupNutrition } from './gemini.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DATA = resolve(process.env.SAZORA_DATA_DIR || join(ROOT, 'server-data'));
@@ -27,10 +27,15 @@ const handle = createApp({
   distDir: join(ROOT, 'dist'),
   secureCookies: process.env.COOKIE_SECURE === '1',
   registrationCode: REGISTRATION_CODE,
-  importDocument: async ({ pdfBase64, catalog }) => {
+  importDocument: async ({ pdfBase64, catalog, onProgress }) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('El servidor no tiene configurada GEMINI_API_KEY (archivo .env).');
-    return importDocument({ pdfBase64, catalog, apiKey, models: MODELS, signal: AbortSignal.timeout(600_000) });
+    return importDocument({ pdfBase64, catalog, onProgress, apiKey, models: MODELS, signal: AbortSignal.timeout(600_000) });
+  },
+  lookupNutrition: async ({ foods }) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('El servidor no tiene configurada GEMINI_API_KEY (archivo .env).');
+    return lookupNutrition({ foods, apiKey, models: MODELS, signal: AbortSignal.timeout(300_000) });
   },
 });
 

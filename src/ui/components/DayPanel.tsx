@@ -2,6 +2,7 @@ import { NUTRIENT_KEYS, NUTRIENT_LABELS, type Diet } from '../../domain/types';
 import type { DaySummary } from '../../domain/day';
 import { GROUP_SHORT } from '../format';
 import { ProgressRow } from './Progress';
+import { href } from '../router';
 
 /** Porciones de la pauta y, debajo, energía y macros (con objetivo solo si está configurado). */
 export function DayPanel({ summary, diet, compact = false }: { summary: DaySummary; diet: Diet; compact?: boolean }) {
@@ -25,7 +26,7 @@ export function DayPanel({ summary, diet, compact = false }: { summary: DaySumma
       <section aria-labelledby="h-energia">
         <h3 id="h-energia">Energía y macros</h3>
         {Object.keys(diet.nutrientTargets).length === 0 && (
-          <p className="note">Tu pauta no fija calorías ni macros. Se muestra lo que se puede calcular, sin objetivo.</p>
+          <p className="note">Tu pauta no fija calorías ni macros. Se muestra lo que se puede calcular, sin objetivo. Si tu nutricionista te los ha dado, puedes añadirlos en <a href={href('/ajustes')}>Ajustes</a>.</p>
         )}
         {nutrientKeys.map((k) => (
           <ProgressRow

@@ -10,12 +10,16 @@ Cada usuario tiene su propia lista, su propia pauta y su propio registro, guarda
 - **Guías.** Lista de alimentos por grupos, crudo a cocido con calculadora (gramos cocinados → porciones) y productos recomendados por supermercado, cada una con su PDF original completo.
 - **Pesar cocinado.** La tabla de crudo a cocido crea la versión cocida de cada alimento de la lista (p. ej. *Arroz (cocido)*: 50 g = 1 porción) para registrar lo que pesas ya hecho.
 - **Lista de la compra compartida en tiempo real.** Se comparte con otro usuario: lo que uno añade, marca o quita lo ve el otro al instante. *Añadir desde el plan* suma lo planificado en los próximos días, en crudo.
-- **Mi dieta.** Porciones por comida, indicaciones de la nutricionista, tabla de equivalencias ("qué es 1 porción") y dudas de la importación, con enlace a la página del PDF original.
+- **Mi dieta.** Solo la pauta: porciones del día, porciones por comida (con sus platos de ejemplo) e indicaciones de la nutricionista agrupadas y plegables, con enlace a la página del PDF original. Si quedan dudas de la importación, un aviso lleva a revisarlas.
+- **Dudas de la importación** (`#/dudas`). Pendientes y revisadas, con su documento y página. Marcarlas como revisadas no cambia la pauta.
+- **Ajustes** (`#/ajustes`). Objetivos de energía y macros (sin configurar, parciales o completos; vacío nunca es cero), descarga de los datos, cuenta y cierre de sesión, y acceso a Documentos y Dudas.
+- **Navegación.** Inicio, Plan, Mi dieta, Recetas (con la pestaña Alimentos) y Compra. Documentos, Dudas y Ajustes van en la barra lateral del escritorio; en el móvil, desde Ajustes en la cabecera.
 - **Plan diario.** Añadir alimentos o platos a cada comida, cambiar cantidades, reordenar, copiar comidas y días, y navegar entre fechas.
 - **Registro de lo comido**, separado de lo previsto: marcar como comido, ajustar la cantidad real y registrar lo no previsto.
 - **Totales.** Porciones comidas, previstas y restantes frente a la pauta. Energía y macros cuando los alimentos tienen datos; nunca se inventan ni se completan con ceros.
 - **Recetas.** Los platos de ejemplo de la pauta, recetas propias, favoritas, raciones y cálculo por ración.
 - **Alimentos.** Catálogo con equivalencias y datos nutricionales opcionales, editables desde la etiqueta del producto.
+- **Buscar datos con Gemini.** En Alimentos, Gemini busca en la web (búsqueda de Google) los valores por 100 g de los alimentos filtrados que no tienen datos: web del supermercado o fabricante, Open Food Facts, BEDCA o USDA. Se revisan antes de guardar y quedan como *pendiente de revisión* con su fuente; lo que no encuentra se queda sin datos y nunca pisa valores ya puestos.
 - **Cuentas.** Acceso con usuario y contraseña; alta desde la terminal del servidor o, si se activa, desde la app con un código de invitación.
 - **Instalable en el móvil** (Android e iPhone) desde el navegador, con su icono y a pantalla completa.
 
@@ -88,7 +92,7 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 2. **Primera lectura:** Gemini identifica qué partes trae (lista, pauta, crudo a cocido, productos) y, si contiene la lista de alimentos, la transcribe tabla a tabla.
 3. **Una lectura más por cada parte** presente, con su propio esquema. La pauta y la tabla de crudo a cocido se leen con el catálogo de alimentos conocidos (incluida la lista del mismo PDF) para enlazarlos.
 4. La app sanea la respuesta, comprueba que las comidas sumen los totales del día y la muestra para revisarla. Las porciones se pueden corregir antes de guardar.
-5. Lo dudoso o lo que no pasa las comprobaciones queda en *Mi dieta → Dudas de la importación*, con enlace a la página del PDF.
+5. Lo dudoso o lo que no pasa las comprobaciones queda en *Dudas de la importación* (aviso en Mi dieta), con enlace a la página del PDF.
 
 El orden importa: primero la lista de alimentos y después la pauta. Las guías (crudo a cocido y productos) son opcionales y se pueden subir en cualquier momento; un documento nuevo del mismo tipo sustituye al anterior. Un PDF que traiga varias partes se procesa de una vez. Si Gemini está saturado, el servidor reintenta y pasa a los modelos de reserva.
 

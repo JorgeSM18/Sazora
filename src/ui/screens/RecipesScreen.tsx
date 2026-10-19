@@ -9,7 +9,17 @@ import { href } from '../router';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export const toggleFavorite = (recipes: Recipe[], id: string) => recipes.map((r) => (r.id === id ? { ...r, favorite: !r.favorite } : r));
+/** Recetas y alimentos comparten sección: pestañas para pasar de una lista a otra. */
+export function CatalogTabs({ current }: { current: 'recetas' | 'alimentos' }) {
+  return (
+    <nav className="chips" aria-label="Recetas y alimentos">
+      <a className={current === 'recetas' ? 'chip on' : 'chip'} href={href('/recetas')} aria-current={current === 'recetas' ? 'page' : undefined}>Recetas</a>
+      <a className={current === 'alimentos' ? 'chip on' : 'chip'} href={href('/alimentos')} aria-current={current === 'alimentos' ? 'page' : undefined}>Alimentos</a>
+    </nav>
+  );
+}
+
+export const toggleFavorite =(recipes: Recipe[], id: string) => recipes.map((r) => (r.id === id ? { ...r, favorite: !r.favorite } : r));
 
 export function RecipesScreen() {
   const { data, update } = useStore();
@@ -31,6 +41,7 @@ export function RecipesScreen() {
 
   return (
     <div className="stack-lg">
+      <CatalogTabs current="recetas" />
       <header className="section-head">
         <h1>Recetas</h1>
         <a className="btn primary" href={href('/recetas/nueva')}><Icon name="mas" size={16} /> Nueva receta</a>

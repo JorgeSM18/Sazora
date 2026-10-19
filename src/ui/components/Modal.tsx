@@ -1,6 +1,7 @@
 // Diálogo nativo (<dialog>): foco atrapado, Escape y fondo inerte sin dependencias.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 
 export function Modal({ title, open, onClose, children }: { title: string; open: boolean; onClose: () => void; children: ReactNode }) {
@@ -15,14 +16,17 @@ export function Modal({ title, open, onClose, children }: { title: string; open:
     }
   }, [open]);
   if (!open) return null;
-  return (
+  // En <body>: un diálogo abierto desde un formulario (p. ej. añadir ingrediente a una receta) no puede quedar
+  // dentro de él, o sus botones envían ese formulario y el navegador recarga la página.
+  return createPortal(
     <dialog ref={ref} className="modal" aria-label={title} onCancel={(e) => { e.preventDefault(); onClose(); }}>
       <header className="modal-head">
         <h2>{title}</h2>
-        <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><Icon name="cerrar" /></button>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar"><Icon name="cerrar" /></button>
       </header>
       <div className="modal-body">{children}</div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 

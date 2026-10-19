@@ -78,6 +78,11 @@ function Form({ initial, isNew, onSave }: { initial: Recipe; isNew: boolean; onS
   const setIng = (k: number, patch: Partial<Ingredient>) => setR({ ...r, ingredients: r.ingredients.map((x, j) => (j === k ? { ...x, ...patch } : x)) });
   const preview = recipePerServing({ ...r, servings: parseDecimal(servings) || 1 }, ctx);
   const show = (e: string | null) => submitted && e;
+  const addFreeText = () => {
+    if (!freeText.trim()) return;
+    setR({ ...r, ingredients: [...r.ingredients, { label: freeText.trim() }] });
+    setFreeText('');
+  };
 
   return (
     <form
@@ -157,9 +162,15 @@ function Form({ initial, isNew, onSave }: { initial: Recipe; isNew: boolean; onS
           <button type="button" className="btn small" onClick={() => setPicking(true)}><Icon name="mas" size={16} /> Añadir alimento</button>
           <label className="field grow inline">
             <span className="sr-only">Ingrediente de texto libre</span>
-            <input value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="O escribe un ingrediente sin calcular (p. ej. especias)" />
+            <input
+              value={freeText}
+              onChange={(e) => setFreeText(e.target.value)}
+              // Enter añade el ingrediente, no envía la receta
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addFreeText(); } }}
+              placeholder="O escribe un ingrediente sin calcular (p. ej. especias)"
+            />
           </label>
-          <button type="button" className="btn small ghost" disabled={!freeText.trim()} onClick={() => { setR({ ...r, ingredients: [...r.ingredients, { label: freeText.trim() }] }); setFreeText(''); }}>Añadir texto</button>
+          <button type="button" className="btn small ghost" disabled={!freeText.trim()} onClick={addFreeText}>Añadir texto</button>
         </div>
         <p className="subtotal">Por ración: <TotalsLine totals={preview} /></p>
       </section>

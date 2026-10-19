@@ -97,6 +97,7 @@ function AmountStep({ food, recipe, confirmLabel, onBack, onPick }: { food?: Foo
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
+        e.stopPropagation(); // el diálogo puede abrirse desde otro formulario (receta): que no lo envíe
         setTouched(true);
         if (!error && n !== null) onPick({ ref, quantity: n, unit });
       }}

@@ -8,6 +8,7 @@ import { openDb } from './db.mjs';
 
 let server, base, dir, db;
 const imports = [];
+const lookups = [];
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'sazora-test-'));
@@ -22,7 +23,13 @@ beforeAll(async () => {
     distDir: join(dir, 'dist'),
     importDocument: async (input) => {
       imports.push(input);
+      input.onProgress?.({ done: 0, total: null, label: 'Identificando el documento' });
+      input.onProgress?.({ done: 1, total: 2, label: 'Leyendo la pauta' });
       return { kind: 'pauta', foodList: null, plan: { plan_name: 'P' }, model: 'falso' };
+    },
+    lookupNutrition: async ({ foods }) => {
+      lookups.push(foods);
+      return { items: [], model: 'falso' };
     },
   });
   server = createServer(handle);
@@ -74,6 +81,19 @@ describe('sesiones', () => {
     expect((await (await fetch(`${base}/api/sesion`, { headers: { cookie } })).json()).user.username).toBe('ana');
     await fetch(`${base}/api/sesion`, { method: 'DELETE', headers: { cookie } });
     expect((await fetch(`${base}/api/sesion`, { headers: { cookie } })).status).toBe(401);
+  });
+});
+
+describe('búsqueda de datos nutricionales', () => {
+  it('pide sesión, limita a 20 alimentos y solo pasa id, nombre, marca y estado', async () => {
+    const foods = Array.from({ length: 25 }, (_, k) => ({ id: `f${k}`, name: `Yogur ${k}`, brand: 'Mercadona', state: 'listo', secreto: 'no' }));
+    expect((await fetch(`${base}/api/nutricion`, json('POST', { foods }))).status).toBe(401);
+    const { cookie } = await login('ana', 'contraseña-ana');
+    const r = await fetch(`${base}/api/nutricion`, json('POST', { foods }, cookie));
+    expect(r.status).toBe(200);
+    expect(lookups.at(-1)).toHaveLength(20);
+    expect(lookups.at(-1)[0]).toEqual({ id: 'f0', name: 'Yogur 0', brand: 'Mercadona', state: 'listo' });
+    expect((await fetch(`${base}/api/nutricion`, json('POST', { foods: [] }, cookie))).status).toBe(400);
   });
 });
 
@@ -165,6 +185,16 @@ describe('importación y documentos', () => {
     expect(own.headers.get('content-type')).toBe('application/pdf');
     expect((await fetch(`${base}${body.document.url}`, { headers: { cookie: otro } })).status).toBe(404);
     expect((await fetch(`${base}${body.document.url}`)).status).toBe(401);
+  });
+
+  it('con accept ndjson envía el avance por líneas y al final la respuesta', async () => {
+    const ana = (await login('ana', 'contraseña-ana')).cookie;
+    const req = json('POST', { pdfBase64: PDF, catalog: [] }, ana);
+    const r = await fetch(`${base}/api/importar`, { ...req, headers: { ...req.headers, accept: 'application/x-ndjson' } });
+    expect(r.headers.get('content-type')).toBe('application/x-ndjson');
+    const lines = (await r.text()).trim().split('\n').map((l) => JSON.parse(l));
+    expect(lines.slice(0, -1)).toEqual([{ type: 'progreso', done: 0, total: null, label: 'Identificando el documento' }, { type: 'progreso', done: 1, total: 2, label: 'Leyendo la pauta' }]);
+    expect(lines.at(-1)).toMatchObject({ status: 200, body: { plan: { plan_name: 'P' }, document: { url: expect.stringMatching(/^\/api\/documentos\//) } } });
   });
 
   it('un error temporal de Gemini llega como reintentable', async () => {

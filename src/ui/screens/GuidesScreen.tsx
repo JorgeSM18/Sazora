@@ -13,6 +13,7 @@ import { href } from '../router';
 import { useDocumentUrl } from '../documents';
 import { NotFound } from './NotFound';
 import { addToDefaultList } from '../../data/shopping';
+import { reviewItems } from '../../domain/review';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -53,6 +54,7 @@ export function GuidesScreen() {
   const conversion = currentDoc(data, 'conversion');
   const productos = currentDoc(data, 'productos');
   const plan = data.diet && data.documents.find((d) => d.id === data.diet!.documents[0] && d.kind === 'plan');
+  const pending = reviewItems(data).filter((r) => !r.resolved).length;
   const cards = [
     { to: '/guias/lista', title: 'Lista de alimentos', text: 'Cuánto es 1 porción de cada alimento, por grupos.', doc: lista },
     { to: '/guias/crudo-cocido', title: 'De crudo a cocido', text: 'Cuánto pesa cocinada cada porción, con calculadora.', doc: conversion },
@@ -67,6 +69,7 @@ export function GuidesScreen() {
           <a className="btn primary" href={href('/dieta/importar')}><Icon name="subir" size={16} /> Subir PDF</a>
         </div>
         <p className="muted small">¿Te ha dado una versión nueva? Súbela y sustituye a la anterior; antes de guardar revisas lo extraído.</p>
+        {pending > 0 && <p className="small"><a href={href('/dudas')}>{pending} {pending === 1 ? 'duda' : 'dudas'} de la importación por revisar</a></p>}
       </header>
       <ul className="cards">
         {cards.map((c) => (
