@@ -2,6 +2,12 @@
   "name": "sazora",
   "private": true,
   "version": "0.1.0",
+  "description": "App de alimentación que lee con IA los PDF de tu nutricionista para planificar comidas, registrar lo que comes y compartir la lista de la compra",
+  "author": "Jorge Sánchez",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JorgeSM18/Sazora.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

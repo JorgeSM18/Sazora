@@ -4,6 +4,14 @@ Aplicación personal de alimentación que trabaja sobre la pauta de tu nutricion
 
 Cada usuario tiene su propia lista, su propia pauta y su propio registro, guardados en el servidor y ligados a su cuenta.
 
+**Stack:** React 18 + TypeScript + Vite · Node.js 22 (`node:sqlite`) · Gemini API · Vitest + Testing Library · systemd + Tailscale en Oracle Cloud
+
+## Capturas
+
+| Inicio | Plan | Mi dieta | Compra |
+|---|---|---|---|
+| ![Inicio](capturas/inicio.jpg) | ![Plan](capturas/plan.jpg) | ![Mi dieta](capturas/dieta.jpg) | ![Compra](capturas/compra.jpg) |
+
 ## Funcionalidades
 
 - **Importación desde PDF con Gemini.** Un único importador que identifica qué trae cada PDF (lista de alimentos, pauta, tabla de crudo a cocido, productos por supermercado o varias a la vez), extrae cada parte y la muestra para revisarla antes de guardar.
@@ -135,5 +143,7 @@ Los datos de prueba (`src/data/fixtures/`) son una transcripción manual de una 
 
 ## Siguientes pasos
 
-- Desplegar en Oracle Cloud con Tailscale siguiendo [DESPLIEGUE.md](DESPLIEGUE.md).
-- Asistente con IA que use el dominio como herramientas (`daySummary`, `recipePerServing`, las equivalencias de la pauta), sin poder modificar la pauta y validando sus propuestas con el motor antes de mostrarlas.
+- Agentes de IA como asistentes:
+  - **Sugerir recetas** que encajen con las porciones que quedan en cada comida, usando el dominio como herramientas (`daySummary`, `recipePerServing`, las equivalencias de la pauta) y validando cada propuesta con el motor antes de mostrarla.
+  - **Rellenar los macros de los alimentos** de forma autónoma a partir de fuentes fiables, dejándolos como *pendiente de revisión* con su fuente.
+  - Sin poder modificar la pauta en ningún caso.

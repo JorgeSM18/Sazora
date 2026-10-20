@@ -476,7 +476,7 @@ describe('lista de la compra', () => {
   let pushes: ((s: Snap) => void)[];
 
   beforeEach(() => {
-    snap = { list: { id: 'l1', name: 'Lista de la compra', ownerId: 1, members: [{ id: 1, username: 'jorge', name: 'Jorge' }] }, items: [] };
+    snap = { list: { id: 'l1', name: 'Lista de la compra', ownerId: 1, members: [{ id: 1, username: 'ana', name: 'Ana' }] }, items: [] };
     pushes = [];
     let n = 0;
     // Servidor simulado de /api/listas.

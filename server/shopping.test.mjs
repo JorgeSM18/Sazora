@@ -12,7 +12,7 @@ const cookies = {};
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'sazora-compra-'));
   db = openDb(':memory:');
-  for (const [u, n] of [['jorge', 'Jorge'], ['pareja', 'Pareja'], ['ajeno', 'Ajeno']]) {
+  for (const [u, n] of [['ana', 'Ana'], ['pareja', 'Pareja'], ['ajeno', 'Ajeno']]) {
     const user = db.createUser(u, n, `contraseña-${u}`);
     cookies[u] = `sazora_sesion=${db.createSession(user.id).token}`;
   }
@@ -68,13 +68,13 @@ describe('lista de la compra compartida', () => {
   let listId;
 
   it('crea una lista y la comparte con otro usuario', async () => {
-    const created = await api('jorge', 'POST', '', { name: 'Casa' });
+    const created = await api('ana', 'POST', '', { name: 'Casa' });
     expect(created.status).toBe(201);
     listId = created.body.list.id;
     expect((await api('pareja', 'GET', `/${listId}`)).status).toBe(404); // aún no es miembro
-    expect((await api('jorge', 'POST', `/${listId}/miembros`, { username: 'nadie' })).status).toBe(404);
-    const shared = await api('jorge', 'POST', `/${listId}/miembros`, { username: 'pareja' });
-    expect(shared.body.list.members.map((m) => m.username)).toEqual(['jorge', 'pareja']);
+    expect((await api('ana', 'POST', `/${listId}/miembros`, { username: 'nadie' })).status).toBe(404);
+    const shared = await api('ana', 'POST', `/${listId}/miembros`, { username: 'pareja' });
+    expect(shared.body.list.members.map((m) => m.username)).toEqual(['ana', 'pareja']);
     expect((await api('pareja', 'GET')).body.lists.map((l) => l.name)).toEqual(['Casa']);
   });
 
@@ -82,16 +82,16 @@ describe('lista de la compra compartida', () => {
     const stream = await listen('pareja', listId);
     await stream.next((s) => s.items.length === 0); // estado inicial
 
-    await api('jorge', 'POST', `/${listId}/items`, { items: [{ text: 'Arroz', quantity: '500 g', category: 'Carbohidratos' }, { text: 'Kiwis', quantity: '6' }] });
+    await api('ana', 'POST', `/${listId}/items`, { items: [{ text: 'Arroz', quantity: '500 g', category: 'Carbohidratos' }, { text: 'Kiwis', quantity: '6' }] });
     const afterAdd = await stream.next((s) => s.items.length === 2);
     expect(afterAdd.items.map((i) => [i.text, i.quantity, i.checked])).toEqual([['Arroz', '500 g', false], ['Kiwis', '6', false]]);
 
     const kiwi = afterAdd.items[1].id;
-    await api('jorge', 'PATCH', `/${listId}/items/${kiwi}`, { checked: true });
+    await api('ana', 'PATCH', `/${listId}/items/${kiwi}`, { checked: true });
     const afterCheck = await stream.next((s) => s.items.some((i) => i.id === kiwi && i.checked));
     expect(afterCheck.items.at(-1).text).toBe('Kiwis'); // los comprados, al final
 
-    await api('jorge', 'POST', `/${listId}/limpiar`);
+    await api('ana', 'POST', `/${listId}/limpiar`);
     const afterClear = await stream.next((s) => s.items.length === 1);
     expect(afterClear.items[0].text).toBe('Arroz');
     stream.close();
@@ -101,7 +101,7 @@ describe('lista de la compra compartida', () => {
     const { body } = await api('pareja', 'GET', `/${listId}`);
     const id = body.items[0].id;
     expect((await api('pareja', 'DELETE', `/${listId}/items/${id}`)).status).toBe(200);
-    expect((await api('jorge', 'PATCH', `/${listId}/items/${id}`, { checked: true })).status).toBe(404);
+    expect((await api('ana', 'PATCH', `/${listId}/items/${id}`, { checked: true })).status).toBe(404);
   });
 
   it('quien no es miembro no ve ni modifica la lista', async () => {
@@ -112,8 +112,8 @@ describe('lista de la compra compartida', () => {
   });
 
   it('valida y limita lo que se añade', async () => {
-    expect((await api('jorge', 'POST', `/${listId}/items`, { items: [{ text: '   ' }] })).status).toBe(400);
-    const long = await api('jorge', 'POST', `/${listId}/items`, { items: [{ text: 'x'.repeat(500) }] });
+    expect((await api('ana', 'POST', `/${listId}/items`, { items: [{ text: '   ' }] })).status).toBe(400);
+    const long = await api('ana', 'POST', `/${listId}/items`, { items: [{ text: 'x'.repeat(500) }] });
     expect(long.body.items.at(-1).text).toHaveLength(200);
   });
 
@@ -126,8 +126,8 @@ describe('lista de la compra compartida', () => {
   it('al salir el último miembro, la lista desaparece', async () => {
     await api('pareja', 'DELETE', `/${listId}/miembros/yo`);
     expect((await api('pareja', 'GET')).body.lists).toEqual([]);
-    expect((await api('jorge', 'GET', `/${listId}`)).status).toBe(200);
-    await api('jorge', 'DELETE', `/${listId}/miembros/yo`);
+    expect((await api('ana', 'GET', `/${listId}`)).status).toBe(200);
+    await api('ana', 'DELETE', `/${listId}/miembros/yo`);
     expect(db.shopping.snapshot(listId)).toBeNull();
   });
 });
