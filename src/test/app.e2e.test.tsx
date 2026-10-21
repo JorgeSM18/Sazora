@@ -71,6 +71,18 @@ describe('con la pauta importada', () => {
     expect(progressRow('Prot. magra')).toHaveTextContent('Quedan 11');
   });
 
+  it('avisa de que la proteína magra de más cubre la semimagra que falta, con su grasa', async () => {
+    const data = fixtureData();
+    const today = todayISO();
+    const eaten = (id: string, foodId: string, quantity: number) => ({ id, date: today, mealId: 'almuerzo', ref: { kind: 'food' as const, foodId }, quantity, unit: 'porcion' as const, status: 'registrado' as const, loggedAt: `${today}T12:00:00` });
+    data.intake = [eaten('i1', 'pescado-blanco', 15), eaten('i2', 'aceite-de-oliva', 3)]; // pauta: 13 magra, 2 semimagra, 4 grasa
+    await open(new MemoryRepository(data));
+    expect(progressRow('Prot. magra')).toHaveTextContent('2 por encima de la pauta');
+    const note = screen.getByText(/Sustitución de tu pauta/).closest('p')!;
+    expect(note).toHaveTextContent('2 de la prot. magra de más cubren 2 de prot. semimagra si sumas 2 de grasa');
+    expect(note).toHaveTextContent('Grasas: llevas 3 de 6 (4 de la pauta + 2)');
+  });
+
   it('enlaza las fuentes con el PDF original en su página', async () => {
     const data = fixtureData();
     data.documents = data.documents.map((d) => ({ ...d, file: `/api/documentos/${d.id === 'plan-1-5' ? 'aaaaaaaaaaaaaaaa' : 'bbbbbbbbbbbbbbbb'}.pdf` }));
