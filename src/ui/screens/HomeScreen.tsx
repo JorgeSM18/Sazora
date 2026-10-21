@@ -51,7 +51,7 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
                 : { text: 'Registrada', cls: 'ok' };
             return (
               <li key={m.meal.id}>
-                <a href={planLink}>
+                <a href={href(`/plan?fecha=${date}&comida=${m.meal.id}`)}>
                   <span className="meal-name">{m.meal.name}</span>
                   <span className={`badge ${status.cls}`}>{status.text}</span>
                   {m.plan.length > 0 && (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { daySummary, type MealDay } from '../../domain/day';
 import { addPlanItem, copyDay, copyMeal, movePlanItem, removePlanItem, updatePlanQuantity } from '../../domain/planner';
 import { consumePlanned, logIntake, removeIntake, updateIntakeQuantity } from '../../domain/intake';
@@ -14,13 +14,17 @@ import { TotalsLine } from '../components/Values';
 import { addDays, amountText, dateLong, isValidISODate, portionsText, todayISO, unitText } from '../format';
 import { href, navigate } from '../router';
 
-export function PlannerScreen({ dateParam }: { dateParam: string | null }) {
+export function PlannerScreen({ dateParam, mealParam = null }: { dateParam: string | null; mealParam?: string | null }) {
   const { data, update } = useStore();
   const diet = useDiet();
   const ctx = useCalc();
   const date = isValidISODate(dateParam) ? dateParam : todayISO();
   const s = useMemo(() => daySummary(data, diet, date, ctx), [data, diet, date, ctx]);
   const [copyOpen, setCopyOpen] = useState(false);
+  // Desde Inicio se llega a una comida concreta (?comida=cena): se baja hasta ella.
+  useEffect(() => {
+    if (mealParam) document.getElementById(`comida-${mealParam}`)?.scrollIntoView({ block: 'start' });
+  }, [mealParam]);
   const go = (d: string) => navigate(`/plan?fecha=${d}`);
 
   return (
@@ -81,7 +85,7 @@ function MealSection({ m, date }: { m: MealDay; date: string }) {
   };
 
   return (
-    <section className="meal" aria-labelledby={`h-${m.meal.id}`}>
+    <section className="meal" id={`comida-${m.meal.id}`} aria-labelledby={`h-${m.meal.id}`}>
       <header className="meal-head">
         <h2 id={`h-${m.meal.id}`}>{m.meal.name}</h2>
         {target && <p className="pauta-text small">Pauta: {target}</p>}

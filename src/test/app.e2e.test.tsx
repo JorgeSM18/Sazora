@@ -71,6 +71,22 @@ describe('con la pauta importada', () => {
     expect(progressRow('Prot. magra')).toHaveTextContent('Quedan 11');
   });
 
+  it('cada comida de Inicio abre el plan ya en esa comida', async () => {
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.id); };
+    try {
+      await open();
+      const cena = screen.getByText('Cena', { selector: '.meal-name' }).closest('a')!;
+      expect(cena).toHaveAttribute('href', `/#/plan?fecha=${todayISO()}&comida=cena`);
+      await go(`/plan?fecha=${todayISO()}&comida=cena`);
+      await screen.findByRole('heading', { name: 'Cena' });
+      expect(scrolled).toContain('comida-cena');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('avisa de que la proteína magra de más cubre la semimagra que falta, con su grasa', async () => {
     const data = fixtureData();
     const today = todayISO();

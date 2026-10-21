@@ -15,6 +15,21 @@ export function Modal({ title, open, onClose, children }: { title: string; open:
       else d.setAttribute('open', '');
     }
   }, [open]);
+  // El teclado del móvil tapa la parte de abajo de la pantalla sin moverla: se mide lo que ocupa
+  // (lo que queda fuera del visualViewport) y el diálogo se coloca encima (--teclado en el CSS).
+  useEffect(() => {
+    const d = ref.current;
+    const vv = window.visualViewport;
+    if (!open || !d || !vv) return;
+    const fit = () => d.style.setProperty('--teclado', `${Math.max(0, window.innerHeight - vv.height - vv.offsetTop)}px`);
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+    };
+  }, [open]);
   if (!open) return null;
   // En <body>: un diálogo abierto desde un formulario (p. ej. añadir ingrediente a una receta) no puede quedar
   // dentro de él, o sus botones envían ese formulario y el navegador recarga la página.

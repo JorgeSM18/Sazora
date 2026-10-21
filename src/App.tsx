@@ -22,12 +22,14 @@ export function App() {
   const { segments, query } = useRoute();
   const [section = 'inicio', id, action, ...rest] = segments;
   const date = query.get('fecha');
+  const meal = query.get('comida');
   const { data } = useStore();
-  // Al cambiar de pantalla se empieza arriba (con rutas por hash, el navegador conserva el scroll de la anterior).
+  // Al cambiar de pantalla se empieza arriba (con rutas por hash, el navegador conserva el scroll de la anterior),
+  // salvo si se pide una comida concreta del plan: entonces la propia pantalla baja hasta ella.
   const path = segments.join('/');
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [path]);
+    if (!meal) window.scrollTo(0, 0);
+  }, [path, meal]);
 
   // La app vive en "/" con rutas tras "#". Cualquier otra ruta del servidor es un 404.
   const atRoot = ['/', '/index.html'].includes(window.location.pathname);
@@ -44,7 +46,7 @@ export function App() {
     else if (section === 'dudas' && !id) screen = <ReviewScreen />;
     else if (section === 'ajustes' && !id) screen = <SettingsScreen />;
     else if (section === 'compra' && !id) screen = <ShoppingScreen />;
-    else if (section === 'plan' && !id) screen = <PlannerScreen dateParam={date} />;
+    else if (section === 'plan' && !id) screen = <PlannerScreen dateParam={date} mealParam={meal} />;
     else if (section === 'recetas' && !id) screen = <RecipesScreen />;
     else if (section === 'recetas' && id === 'nueva' && !action) screen = <RecipeEditor />;
     else if (section === 'recetas' && id && action === 'editar') screen = <RecipeEditor recipeId={id} />;
