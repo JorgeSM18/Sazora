@@ -128,7 +128,7 @@ describe('con la pauta importada', () => {
     expect(within(screen.getByRole('navigation', { name: 'Más secciones' })).getByRole('link', { name: /Documentos/ })).toHaveAttribute('href', '/#/guias');
   });
 
-  it('busca con Gemini los datos por 100 g de los alimentos filtrados, se revisan y se guardan pendientes', async () => {
+  it('busca los datos por 100 g de los alimentos filtrados, se revisan y se guardan pendientes', async () => {
     const user = userEvent.setup();
     const sent: { id: string }[][] = [];
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
@@ -145,7 +145,7 @@ describe('con la pauta importada', () => {
       await go('/alimentos');
       await user.type(await screen.findByLabelText('Buscar'), 'arroz');
       const targets = fixtureData().foods.filter((f) => !f.nutrition && /arroz/i.test(f.name));
-      await user.click(screen.getByRole('button', { name: `Buscar datos con Gemini (${targets.length})` }));
+      await user.click(screen.getByRole('button', { name: `Buscar datos nutricionales (${targets.length})` }));
       await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Buscar' }));
       expect(await within(screen.getByRole('dialog')).findByText(/Encontrados/)).toHaveTextContent(`Encontrados 1 de ${targets.length}`);
       expect(sent[0]!.map((f) => f.id).sort()).toEqual(targets.map((f) => f.id).sort());
@@ -153,7 +153,39 @@ describe('con la pauta importada', () => {
       await act(async () => {});
       const saved = (await repo.load()) as AppData;
       expect(saved.foods.find((f) => f.id === 'arroz')!.nutrition).toMatchObject({ per: 100, unit: 'g', status: 'pendiente', values: { kcal: 350, protein: 7, carbs: 78, fat: 1 } });
-      expect(saved.foods.find((f) => f.id === 'arroz')!.nutrition!.source).toMatch(/^BEDCA \(https:\/\/www\.bedca\.net\/\) · buscado con Gemini el .* · En crudo$/);
+      expect(saved.foods.find((f) => f.id === 'arroz')!.nutrition!.source).toMatch(/^BEDCA \(https:\/\/www\.bedca\.net\/\) · emparejado con IA el .* · En crudo$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('asistente: envía los datos del día ya calculados, calcula él la propuesta y descarta lo que no está en la lista', async () => {
+    const user = userEvent.setup();
+    const sent: { context: string; messages: { role: string; text: string }[] }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      expect(url).toBe('/api/asistente');
+      sent.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ reply: 'Una idea para hoy.', recipes: [
+        { name: 'Arroz con aceite', servings: 1, ingredients: [{ food_id: 'arroz', quantity: 2, unit: 'porcion' }, { food_id: 'aceite-de-oliva', quantity: 5, unit: 'porcion' }], steps: ['Cocer el arroz'] },
+        { name: 'Unicornio asado', servings: 1, ingredients: [{ food_id: 'unicornio', quantity: 100, unit: 'g' }], steps: [] },
+      ] }), { status: 200 });
+    });
+    try {
+      await open();
+      await go('/asistente');
+      await user.type(await screen.findByLabelText('Tu pregunta'), '¿Qué ceno?{Enter}');
+      const card = (await screen.findByRole('heading', { name: 'Arroz con aceite' })).closest('article')!;
+      expect(sent[0]!.messages).toEqual([{ role: 'user', text: '¿Qué ceno?' }]);
+      expect(sent[0]!.context).toContain(`RESUMEN DEL DÍA ${todayISO()}`);
+      expect(sent[0]!.context).toContain('- Grasas: pauta 4 · comido 0 · planificado 0 · quedan 4');
+      expect(card).toHaveTextContent('2 carbohidratos · 5 grasa');
+      expect(card).toHaveTextContent('Supera lo que te queda hoy: 1 de grasa de más.');
+      expect(screen.queryByText('Unicornio asado')).not.toBeInTheDocument();
+      expect(screen.getByText(/Se ha descartado 1 propuesta/)).toBeInTheDocument();
+      await user.click(within(card).getByRole('button', { name: 'Guardar en mis recetas' }));
+      await act(async () => {});
+      const saved = ((await repo.load()) as AppData).recipes.find((r) => r.name === 'Arroz con aceite')!;
+      expect(saved).toMatchObject({ origin: 'usuario', status: 'pendiente', ingredients: [{ foodId: 'arroz', quantity: 2, unit: 'porcion' }, { foodId: 'aceite-de-oliva', quantity: 5, unit: 'porcion' }] });
     } finally {
       vi.unstubAllGlobals();
     }

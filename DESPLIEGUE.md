@@ -12,7 +12,7 @@ tailscale serve :443 ──▶ Sazora 127.0.0.1:8787 ──▶ API de Gemini (so
 ```
 
 - **Entrada:** solo por Tailscale. La VM no acepta conexiones desde internet.
-- **Salida:** la VM llama a la API de Gemini al importar PDF y al buscar datos nutricionales.
+- **Salida:** la VM llama a la API de Gemini (importar PDF, asistente y emparejado de alimentos) y, al buscar datos nutricionales, a `www.bedca.net` y `search.openfoodfacts.org`.
 
 Cambia `<tu-tailnet>`, `<tu-usuario>` y los demás marcadores por tus valores. Cada bloque dice dónde se ejecuta: **en tu PC** o **en la VM** (por SSH).
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildConversionRequest, buildListRequest, buildPlanRequest, buildNutritionRequest, buildProductsRequest, CONVERSION_SCHEMA, generate, GROUPS, importDocument, LIST_SCHEMA, listCatalog, parseResponse, PLAN_SCHEMA, postJson, PRODUCTS_SCHEMA, slug } from './gemini.mjs';
+import { buildConversionRequest, buildListRequest, buildAssistantRequest, buildPlanRequest, buildProductsRequest, CONVERSION_SCHEMA, generate, GROUPS, importDocument, LIST_SCHEMA, listCatalog, parseResponse, PLAN_SCHEMA, postJson, PRODUCTS_SCHEMA, slug } from './gemini.mjs';
 
 const output = (obj) => ({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(obj) }] }] });
 const reply = (status, body) => ({ ok: status === 200, status, statusText: '', json: async () => body });
@@ -43,13 +43,15 @@ describe('peticiones', () => {
   });
 });
 
-describe('datos nutricionales', () => {
-  it('pide búsqueda de Google y respuesta JSON, con marca y estado de cada alimento', () => {
-    const r = buildNutritionRequest({ model: 'm', foods: [{ id: 'yogur-1', name: 'Yogur proteico', brand: 'Mercadona', state: 'listo' }, { id: 'arroz', name: 'Arroz' }] });
-    expect(r.tools).toEqual([{ type: 'google_search' }]);
+describe('asistente', () => {
+  it('manda los datos de Sazora como datos, la conversación y la pregunta; sin herramientas y con respuesta JSON', () => {
+    const r = buildAssistantRequest({ model: 'm', context: 'RESUMEN DEL DÍA: quedan 2', messages: [{ role: 'user', text: 'Hola' }, { role: 'assistant', text: 'Dime' }, { role: 'user', text: '¿Qué me queda?' }] });
+    expect(r.model).toBe('m');
+    expect(r.tools).toBeUndefined();
     expect(r.response_format.mime_type).toBe('application/json');
-    expect(r.input[0].text).toContain('yogur-1: Yogur proteico (Mercadona) [listo]');
-    expect(r.input[0].text).toContain('arroz: Arroz\n'.trim());
+    expect(r.input[0].text).toBe('DATOS DE SAZORA\nRESUMEN DEL DÍA: quedan 2\nFIN DE DATOS DE SAZORA\n\nConversación hasta ahora:\nUsuario: Hola\nAsistente: Dime\n\nPregunta: ¿Qué me queda?');
+    expect(r.system_instruction).toMatch(/No inventes/);
+    expect(r.system_instruction).toMatch(/No hagas cálculos/);
   });
 });
 

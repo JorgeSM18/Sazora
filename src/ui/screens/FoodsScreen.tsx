@@ -40,7 +40,7 @@ export function FoodsScreen() {
       </header>
       <p className="note">
         Tus documentos dicen <b>cuánto es una porción</b>, pero no traen calorías ni macros. {withoutData} alimentos no tienen datos nutricionales:
-        puedes añadirlos desde la etiqueta del producto o una fuente fiable, o buscarlos con Gemini (se buscan los de la lista filtrada). Mientras tanto se calculan porciones, no calorías.
+        puedes añadirlos desde la etiqueta del producto o una fuente fiable, o buscarlos en BEDCA y Open Food Facts (se buscan los de la lista filtrada). Mientras tanto se calculan porciones, no calorías.
       </p>
       <div className="filters">
         <label className="field grow"><span>Buscar</span><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre o marca" /></label>

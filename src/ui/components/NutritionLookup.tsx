@@ -1,4 +1,4 @@
-// Buscar con Gemini (búsqueda web) los datos por 100 g de los alimentos sin datos nutricionales.
+// Buscar en BEDCA y Open Food Facts los datos por 100 g de los alimentos sin datos nutricionales.
 // Se revisan antes de guardar y se guardan como pendientes de revisión, con su fuente.
 
 import { useRef, useState } from 'react';
@@ -59,7 +59,7 @@ export function NutritionLookup({ foods }: { foods: Food[] }) {
     }
     if (!running.current) return;
     running.current = false;
-    setSkip(new Set());
+    setSkip(new Set(found.filter((n) => n.warnings.length).map((n) => n.foodId))); // lo que lleva aviso no se guarda sin marcarlo
     setState({ step: 'revisar', found, error });
   }
 
@@ -72,13 +72,13 @@ export function NutritionLookup({ foods }: { foods: Food[] }) {
   return (
     <>
       <button className="btn" disabled={!targets.length} onClick={() => setOpen(true)}>
-        <Icon name="alimentos" size={16} /> Buscar datos con Gemini{targets.length ? ` (${targets.length})` : ''}
+        <Icon name="alimentos" size={16} /> Buscar datos nutricionales{targets.length ? ` (${targets.length})` : ''}
       </button>
       <Modal title="Buscar datos nutricionales" open={open} onClose={close}>
         {state.step === 'confirmar' && (
           <div className="stack">
-            <p>Gemini buscará en la web los valores por 100 g (o 100 ml) de los <b>{targets.length}</b> alimentos de esta lista que no tienen datos: primero la web del supermercado o del fabricante; para alimentos genéricos, bases de datos como BEDCA o USDA.</p>
-            <p className="muted small">Solo se envían el nombre, la marca o supermercado y el estado de cada alimento. Se hace en {groups} {groups === 1 ? 'consulta' : 'consultas'} de tu cuota de Gemini. Antes de guardar revisas lo encontrado; se guarda como pendiente de revisión, con su fuente, y no cambia los alimentos que ya tienen datos.</p>
+            <p>Se buscarán los valores por 100 g de los <b>{targets.length}</b> alimentos de esta lista que no tienen datos: los genéricos en BEDCA (la base española de composición de alimentos) y los productos de marca en Open Food Facts. La IA solo elige qué entrada corresponde a cada alimento; los valores se copian de la fuente.</p>
+            <p className="muted small">Solo se envían el nombre, la marca o supermercado y el estado de cada alimento. Se hace en {groups} {groups === 1 ? 'consulta' : 'consultas'}; lo ya buscado no se vuelve a consultar. Antes de guardar revisas lo encontrado y con qué entrada se ha emparejado; se guarda como pendiente de revisión, con su fuente, y no cambia los alimentos que ya tienen datos.</p>
             <div className="row end">
               <button className="btn ghost" onClick={close}>Cancelar</button>
               <button className="btn primary" onClick={() => void run()}>Buscar</button>
@@ -89,7 +89,7 @@ export function NutritionLookup({ foods }: { foods: Food[] }) {
           <div className="loader" aria-live="polite" aria-busy="true">
             <div className="spinner" aria-hidden="true" />
             <p className="loader-title">Buscando… consulta {state.group} de {groups}</p>
-            <p className="muted small">Cada consulta puede tardar uno o dos minutos.</p>
+            <p className="muted small">Cada consulta tarda unos segundos.</p>
           </div>
         )}
         {state.step === 'revisar' && (
@@ -101,7 +101,7 @@ export function NutritionLookup({ foods }: { foods: Food[] }) {
               </p>
             )}
             {(!state.error || state.found.length > 0) && (
-              <p>Encontrados <b>{state.found.length}</b> de {targets.length}. Lo que no aparece se queda sin datos: no se completa con estimaciones.</p>
+              <p>Encontrados <b>{state.found.length}</b> de {targets.length}. Lo que no aparece se queda sin datos: no se completa con estimaciones. Comprueba que cada entrada es tu alimento; lo que lleva un aviso está sin marcar.</p>
             )}
             {state.found.length > 0 && (
               <ul className="review lookup-results">

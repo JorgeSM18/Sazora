@@ -4,7 +4,7 @@ Aplicación personal de alimentación que trabaja sobre la pauta de tu nutricion
 
 Cada usuario tiene su propia lista, su propia pauta y su propio registro, guardados en el servidor y ligados a su cuenta.
 
-**Stack:** React 18 + TypeScript + Vite · Node.js 22 (`node:sqlite`) · Gemini API · Vitest + Testing Library · systemd + Tailscale en Oracle Cloud
+**Stack:** React 18 + TypeScript + Vite · Node.js 22 (`node:sqlite`) · Gemini API · BEDCA y Open Food Facts · Vitest + Testing Library · systemd + Tailscale en Oracle Cloud
 
 ## Capturas
 
@@ -27,7 +27,8 @@ Cada usuario tiene su propia lista, su propia pauta y su propio registro, guarda
 - **Totales.** Porciones comidas, previstas y restantes frente a la pauta. Energía y macros cuando los alimentos tienen datos; nunca se inventan ni se completan con ceros.
 - **Recetas.** Los platos de ejemplo de la pauta, recetas propias, favoritas, raciones y cálculo por ración.
 - **Alimentos.** Catálogo con equivalencias y datos nutricionales opcionales, editables desde la etiqueta del producto.
-- **Buscar datos con Gemini.** En Alimentos, Gemini busca en la web (búsqueda de Google) los valores por 100 g de los alimentos filtrados que no tienen datos: web del supermercado o fabricante, Open Food Facts, BEDCA o USDA. Se revisan antes de guardar y quedan como *pendiente de revisión* con su fuente; lo que no encuentra se queda sin datos y nunca pisa valores ya puestos.
+- **Buscar datos nutricionales.** En Alimentos, busca los valores por 100 g de los alimentos filtrados que no tienen datos: los genéricos en [BEDCA](https://www.bedca.net/) y los productos de marca en [Open Food Facts](https://world.openfoodfacts.org/), ambas gratuitas y sin clave. La IA solo elige qué entrada corresponde a cada alimento; los valores se copian de la fuente. Se revisan antes de guardar (lo que lleva un aviso queda sin marcar) y se guardan como *pendiente de revisión* con su fuente; lo que no se encuentra se queda sin datos y nunca pisa valores ya puestos. Lo ya buscado se guarda en el servidor y no se vuelve a consultar.
+- **Asistente** (`#/asistente`). Preguntas sobre la pauta, lo comido y lo que queda hoy, alternativas e ideas de comida con los alimentos de tu lista. La app le pasa los datos ya calculados; las porciones y los macros de cada propuesta los calcula Sazora, y una propuesta con un alimento que no está en la lista se descarta.
 - **Cuentas.** Acceso con usuario y contraseña; alta desde la terminal del servidor o, si se activa, desde la app con un código de invitación.
 - **Instalable en el móvil** (Android e iPhone) desde el navegador, con su icono y a pantalla completa.
 
@@ -65,6 +66,7 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 | `GEMINI_API_KEY` | — | Clave de Gemini. Solo la usa el servidor; los usuarios nunca la ven |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Modelo principal |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash` | Modelos de reserva si el principal está saturado |
+| `GEMINI_LIGHT_MODELS` | `gemini-3.5-flash-lite,gemini-3.1-flash-lite` | Modelos del asistente y del emparejado de alimentos (los de más cuota gratuita); después se prueban los anteriores |
 | `PORT` | `8787` | Puerto del servidor |
 | `HOST` | `127.0.0.1` | Dirección de escucha. Solo local por defecto (detrás del proxy HTTPS); `0.0.0.0` para abrirlo a la red |
 | `SAZORA_CODIGO_REGISTRO` | — | Código de invitación para crear cuentas desde la app. Sin él, el registro está desactivado |
@@ -75,11 +77,11 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 
 | Carpeta | Contenido |
 |---|---|
-| `src/domain/` | Modelo y reglas, sin React ni red. Motor de cálculo (`nutrition.ts`), plan e ingesta, resumen diario, validación, importación (`importFoodList.ts`, `importPlan.ts`, `importGuides.ts`) y compra desde el plan (`shopping.ts`) |
+| `src/domain/` | Modelo y reglas, sin React ni red. Motor de cálculo (`nutrition.ts`), plan e ingesta, resumen diario, validación, importación (`importFoodList.ts`, `importPlan.ts`, `importGuides.ts`), compra desde el plan (`shopping.ts`) y asistente (`assistant.ts`: qué se le cuenta al modelo y cómo se valida lo que devuelve) |
 | `src/data/` | `repository.ts` (datos del usuario en el servidor), `maintenance.ts` y `fixtures/` (datos de prueba) |
 | `src/state/` | Estado global: carga los datos, aplica las funciones del dominio y guarda cada cambio |
 | `src/ui/` | Sesión, pantallas y componentes. Ninguna fórmula en la interfaz |
-| `server/` | `index.mjs` (arranque), `app.mjs` (rutas y tiempo real), `db.mjs` (SQLite), `shopping.mjs` (listas compartidas), `gemini.mjs` (lectura de PDF), `usuarios.mjs` (gestión de usuarios), `copia.mjs` (copias de seguridad) |
+| `server/` | `index.mjs` (arranque), `app.mjs` (rutas y tiempo real), `db.mjs` (SQLite), `shopping.mjs` (listas compartidas), `gemini.mjs` (lectura de PDF y asistente), `nutrition.mjs` (datos nutricionales de BEDCA y Open Food Facts), `usuarios.mjs` (gestión de usuarios), `copia.mjs` (copias de seguridad) |
 | `deploy/` | Servicio de systemd, copia diaria y configuración de Caddy (ver [DESPLIEGUE.md](DESPLIEGUE.md)) |
 | `brand/` | Identidad visual: tokens de diseño (la app importa `tokens.css`) y logotipo |
 
@@ -93,6 +95,8 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 - **Datos por usuario.** Cada usuario guarda un documento JSON versionado en SQLite. Si dos dispositivos guardan a la vez, el segundo recibe un conflicto en vez de pisar al primero.
 - **Lista de la compra aparte.** Al ser compartida, vive en sus propias tablas y cada cambio es una operación sobre un artículo (añadir, marcar, quitar), así dos personas pueden usarla a la vez sin pisarse. Los cambios llegan en directo por *Server-Sent Events* (nativo del navegador, sin dependencias).
 - **Sin dependencias en el servidor.** Solo Node: `node:http`, `node:sqlite` y `node:crypto`.
+- **La IA interpreta; Sazora calcula.** El modelo nunca aporta cifras: en los datos nutricionales solo elige la entrada de BEDCA u Open Food Facts (y el servidor comprueba que exista y que comparta nombre con el alimento); en el asistente recibe el día ya calculado por el motor y sus propuestas se validan y se recalculan en la app.
+- **Sin búsqueda web de Gemini.** La búsqueda de Google no está disponible en el plan gratuito de la API con los modelos actuales, así que no se usa.
 
 ## Importar documentos (IA)
 
@@ -104,7 +108,7 @@ Vite redirige `/api` al servidor, así que en desarrollo se usa siempre `http://
 
 El orden importa: primero la lista de alimentos y después la pauta. Las guías (crudo a cocido y productos) son opcionales y se pueden subir en cualquier momento; un documento nuevo del mismo tipo sustituye al anterior. Un PDF que traiga varias partes se procesa de una vez. Si Gemini está saturado, el servidor reintenta y pasa a los modelos de reserva.
 
-**Privacidad:** con la API gratuita de Gemini, Google puede usar el contenido enviado para mejorar sus productos y puede revisarlo una persona. Con la facturación activada en el proyecto, no. Para pautas con datos de salud, activa la facturación.
+**Privacidad:** con la API gratuita de Gemini, Google puede usar el contenido enviado para mejorar sus productos y puede revisarlo una persona. Esto incluye lo que envía el asistente con cada pregunta: la pauta, la lista de alimentos y lo planificado y comido ese día. A BEDCA y Open Food Facts solo llegan nombres de alimentos. Con la facturación activada en el proyecto, no. Para pautas con datos de salud, activa la facturación.
 
 ## Seguridad
 

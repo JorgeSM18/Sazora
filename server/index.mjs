@@ -6,7 +6,8 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createApp } from './app.mjs';
 import { openDb } from './db.mjs';
-import { importDocument, lookupNutrition } from './gemini.mjs';
+import { askAssistant, generate, importDocument } from './gemini.mjs';
+import { createNutritionLookup } from './nutrition.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DATA = resolve(process.env.SAZORA_DATA_DIR || join(ROOT, 'server-data'));
@@ -17,6 +18,12 @@ const REGISTRATION_CODE = process.env.SAZORA_CODIGO_REGISTRO || undefined;
 // Primero el modelo principal; si está saturado, los de reserva en orden.
 const FALLBACKS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash').split(',').map((s) => s.trim());
 const MODELS = [...new Set([process.env.GEMINI_MODEL || 'gemini-3.8-flash', ...FALLBACKS].filter(Boolean))];
+// Asistente y emparejado de alimentos: tareas ligeras y frecuentes, con los modelos de más cuota gratuita; después, los de siempre.
+const LIGHT_MODELS = [...new Set([...(process.env.GEMINI_LIGHT_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite').split(',').map((m) => m.trim()).filter(Boolean), ...MODELS])];
+const apiKey = () => {
+  if (!process.env.GEMINI_API_KEY) throw new Error('El servidor no tiene configurada GEMINI_API_KEY (archivo .env).');
+  return process.env.GEMINI_API_KEY;
+};
 
 mkdirSync(DATA, { recursive: true });
 const db = openDb(join(DATA, 'sazora.db'));
@@ -27,21 +34,17 @@ const handle = createApp({
   distDir: join(ROOT, 'dist'),
   secureCookies: process.env.COOKIE_SECURE === '1',
   registrationCode: REGISTRATION_CODE,
-  importDocument: async ({ pdfBase64, catalog, onProgress }) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('El servidor no tiene configurada GEMINI_API_KEY (archivo .env).');
-    return importDocument({ pdfBase64, catalog, onProgress, apiKey, models: MODELS, signal: AbortSignal.timeout(600_000) });
-  },
-  lookupNutrition: async ({ foods }) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('El servidor no tiene configurada GEMINI_API_KEY (archivo .env).');
-    return lookupNutrition({ foods, apiKey, models: MODELS, signal: AbortSignal.timeout(300_000) });
-  },
+  importDocument: async ({ pdfBase64, catalog, onProgress }) => importDocument({ pdfBase64, catalog, onProgress, apiKey: apiKey(), models: MODELS, signal: AbortSignal.timeout(600_000) }),
+  lookupNutrition: createNutritionLookup({
+    cache: db.cache,
+    generate: async (build) => generate({ build, apiKey: apiKey(), models: LIGHT_MODELS, signal: AbortSignal.timeout(180_000) }),
+  }),
+  askAssistant: async ({ context, messages }) => askAssistant({ context, messages, apiKey: apiKey(), models: LIGHT_MODELS, signal: AbortSignal.timeout(120_000) }),
 });
 
 createServer(handle).listen(PORT, HOST, () => {
   const users = db.listUsers().length;
-  console.log(`Sazora escuchando en http://${HOST}:${PORT} · modelos: ${MODELS.join(', ')} · usuarios: ${users} · registro: ${REGISTRATION_CODE ? 'con código de invitación' : 'desactivado'}`);
+  console.log(`Sazora escuchando en http://${HOST}:${PORT} · modelos: ${MODELS.join(', ')} · ligeros: ${LIGHT_MODELS.slice(0, 2).join(', ')} · usuarios: ${users} · registro: ${REGISTRATION_CODE ? 'con código de invitación' : 'desactivado'}`);
   if (REGISTRATION_CODE && REGISTRATION_CODE.length < 12) console.warn('Aviso: el código de invitación es corto; usa al menos 12 caracteres.');
   if (!users) console.log('No hay usuarios. Crea uno con: npm run usuario -- crear <usuario> "<Nombre>"');
 });

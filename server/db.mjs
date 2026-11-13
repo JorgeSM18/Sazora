@@ -50,6 +50,11 @@ export function openDb(path = ':memory:') {
       version INTEGER NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS cache (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      at INTEGER NOT NULL
+    );
   `);
 
   const q = {
@@ -65,6 +70,8 @@ export function openDb(path = ':memory:') {
     pruneSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
     getData: db.prepare('SELECT data, version FROM user_data WHERE user_id = ?'),
     insertData: db.prepare('INSERT INTO user_data (user_id, data, version) VALUES (?, ?, 1)'),
+    getCache: db.prepare('SELECT value, at FROM cache WHERE key = ?'),
+    setCache: db.prepare('INSERT INTO cache (key, value, at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, at = excluded.at'),
     updateData: db.prepare("UPDATE user_data SET data = ?, version = version + 1, updated_at = datetime('now') WHERE user_id = ? AND version = ?"),
   };
 
@@ -74,6 +81,14 @@ export function openDb(path = ':memory:') {
     close: () => db.close(),
     /** Listas de la compra compartidas entre usuarios. */
     shopping: shoppingStore(db),
+    /** Caché común a todos los usuarios para datos públicos de fuentes externas (tablas de composición de alimentos). */
+    cache: {
+      get(key, maxAgeMs = Infinity, now = Date.now()) {
+        const row = q.getCache.get(key);
+        return row && now - Number(row.at) <= maxAgeMs ? JSON.parse(row.value) : null;
+      },
+      set: (key, value, now = Date.now()) => void q.setCache.run(key, JSON.stringify(value), now),
+    },
     /** Copia coherente de la base de datos a otro archivo, aunque haya escrituras en curso. */
     backupTo: (file) => db.prepare('VACUUM INTO ?').run(file),
 

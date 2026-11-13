@@ -31,6 +31,15 @@ describe('búsqueda de datos nutricionales', () => {
     expect(r!.warnings[0]).toMatch(/no cuadran/);
   });
 
+  it('avisa de lo que hay que mirar antes de guardar: alimentos cocidos y unidades que no son las de la lista', () => {
+    const eq = (unit: 'g' | 'unidad' | 'porcion') => ({ amount: 1, unit, portions: { lacteos: 1 }, source: { doc: 'd' }, status: 'verificado' as const });
+    const [cooked] = sanitizeNutritionLookup({ items: [item({})] }, [{ id: 'arroz', state: 'cocido', equivalences: [eq('g')] }]);
+    expect(cooked!.warnings).toEqual([expect.stringMatching(/ya cocinado/)]);
+    const [units] = sanitizeNutritionLookup({ items: [item({ id: 'yogur' })] }, [{ id: 'yogur', state: 'listo', equivalences: [eq('unidad'), eq('porcion')] }]);
+    expect(units!.warnings).toEqual([expect.stringMatching(/lo mide en unidad, no en g/)]);
+    expect(sanitizeNutritionLookup({ items: [item({})] }, [{ id: 'arroz', state: 'crudo', equivalences: [eq('g'), eq('unidad')] }])[0]!.warnings).toEqual([]);
+  });
+
   it('guarda por 100 g, pendiente de revisión y con su fuente, sin pisar datos ya puestos', () => {
     const data = fixtureData();
     const withData = data.foods.find((f) => f.nutrition)!;
@@ -38,7 +47,7 @@ describe('búsqueda de datos nutricionales', () => {
     const next = applyNutritionLookup(data, found, '2026-10-17');
     expect(next.foods.find((f) => f.id === 'arroz')!.nutrition).toEqual({
       per: 100, unit: 'g', values: { kcal: 350, protein: 7, carbs: 78, fat: 1 }, status: 'pendiente',
-      source: 'BEDCA (https://www.bedca.net/) · buscado con Gemini el 2026-10-17',
+      source: 'BEDCA (https://www.bedca.net/) · emparejado con IA el 2026-10-17',
     });
     expect(next.foods.find((f) => f.id === withData.id)!.nutrition).toEqual(withData.nutrition);
   });

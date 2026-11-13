@@ -69,13 +69,14 @@ const cookieToken = (req) =>
  * @param {object} deps
  * @param {ReturnType<import('./db.mjs').openDb>} deps.db
  * @param {(input: { pdfBase64: string, catalog: {id: string, name: string}[] }) => Promise<object>} deps.importDocument
- * @param {(input: { foods: {id: string, name: string, brand?: string, state?: string}[] }) => Promise<object>} [deps.lookupNutrition]  búsqueda web de datos nutricionales
+ * @param {(input: { foods: {id: string, name: string, brand?: string, state?: string}[] }) => Promise<object>} [deps.lookupNutrition]  datos nutricionales de BEDCA y Open Food Facts
+ * @param {(input: { context: string, messages: {role: string, text: string}[] }) => Promise<object>} [deps.askAssistant]  asistente (la app le da los datos ya calculados)
  * @param {string} deps.docsDir  carpeta de PDF importados (una subcarpeta por usuario)
  * @param {string} deps.distDir  web compilada
  * @param {boolean} [deps.secureCookies]
  * @param {string} [deps.registrationCode]  código de invitación; sin él, el registro está desactivado
  */
-export function createApp({ db, importDocument, lookupNutrition, docsDir, distDir, secureCookies = false, registrationCode }) {
+export function createApp({ db, importDocument, lookupNutrition, askAssistant, docsDir, distDir, secureCookies = false, registrationCode }) {
   const attempts = new Map(); // intentos fallidos (login, registro): clave → { n, until }
   const MAX_FAILS = 5;
   const WINDOW = 10 * 60_000;
@@ -150,7 +151,34 @@ export function createApp({ db, importDocument, lookupNutrition, docsDir, distDi
     }
   }
 
-  /** Busca en la web los datos nutricionales de unos alimentos. No guarda nada: la app los revisa y los guarda. */
+  /** Una consulta a la IA a la vez por usuario (comparten cuota); los errores de Gemini, con su código. */
+  async function withAi(res, user, run) {
+    if (importing.has(user.id)) throw new HttpError(429, 'Ya hay una consulta a Gemini en curso. Espera a que termine.');
+    importing.add(user.id);
+    try {
+      send(res, 200, await run());
+    } catch (e) {
+      const timeout = e?.name === 'TimeoutError';
+      send(res, e?.quota ? 429 : e?.busy ? 503 : 502, { error: timeout ? 'Gemini ha tardado demasiado. Inténtalo de nuevo.' : e.message });
+    } finally {
+      importing.delete(user.id);
+    }
+  }
+
+  /** Pregunta al asistente. El contexto (pauta, alimentos, día) lo calcula la app; aquí solo se acota y se reenvía. */
+  async function assistant(req, res, user) {
+    if (!askAssistant) throw new HttpError(404, 'Ruta no encontrada.');
+    const input = await readJson(req, MB);
+    const context = String(input.context ?? '').slice(0, 400_000);
+    const messages = (Array.isArray(input.messages) ? input.messages : [])
+      .slice(-8)
+      .map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', text: String(m?.text ?? '').trim().slice(0, 4000) }))
+      .filter((m) => m.text);
+    if (!context || messages.at(-1)?.role !== 'user') throw new HttpError(400, 'Falta la pregunta.');
+    await withAi(res, user, () => askAssistant({ context, messages }));
+  }
+
+  /** Busca los datos nutricionales de unos alimentos. No guarda nada en el usuario: la app los revisa y los guarda. */
   async function nutrition(req, res, user) {
     if (!lookupNutrition) throw new HttpError(404, 'Ruta no encontrada.');
     const input = await readJson(req, MB);
@@ -159,16 +187,7 @@ export function createApp({ db, importDocument, lookupNutrition, docsDir, distDi
       .map((f) => ({ id: String(f?.id ?? '').slice(0, 120), name: String(f?.name ?? '').slice(0, 120), brand: f?.brand ? String(f.brand).slice(0, 60) : undefined, state: f?.state ? String(f.state).slice(0, 20) : undefined }))
       .filter((f) => f.id && f.name);
     if (!foods.length) throw new HttpError(400, 'Faltan los alimentos.');
-    if (importing.has(user.id)) throw new HttpError(429, 'Ya hay una consulta a Gemini en curso. Espera a que termine.');
-    importing.add(user.id);
-    try {
-      send(res, 200, await lookupNutrition({ foods }));
-    } catch (e) {
-      const timeout = e?.name === 'TimeoutError';
-      send(res, e?.quota ? 429 : e?.busy ? 503 : 502, { error: timeout ? 'Gemini ha tardado demasiado. Inténtalo de nuevo.' : e.message });
-    } finally {
-      importing.delete(user.id);
-    }
+    await withAi(res, user, () => lookupNutrition({ foods }));
   }
 
   async function importPdfFor(req, res, user) {
@@ -334,6 +353,7 @@ export function createApp({ db, importDocument, lookupNutrition, docsDir, distDi
       }
       if (route === 'POST /api/importar') return await importPdf(req, res, requireUser(req));
       if (route === 'POST /api/nutricion') return await nutrition(req, res, requireUser(req));
+      if (route === 'POST /api/asistente') return await assistant(req, res, requireUser(req));
       if (url.pathname === '/api/listas' || url.pathname.startsWith('/api/listas/')) return await shopping(req, res, url, requireUser(req));
 
       const doc = url.pathname.match(/^\/api\/documentos\/([a-f0-9]{16})\.pdf$/);

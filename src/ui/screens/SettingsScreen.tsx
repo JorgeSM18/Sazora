@@ -21,6 +21,7 @@ export function SettingsScreen() {
 
       <nav aria-label="Más secciones">
         <ul className="list">
+          <li><a href={href('/asistente')}><span className="list-title"><Icon name="estrella" size={18} /> Asistente</span><span className="muted small">Pregunta por tu pauta, lo que te queda hoy o pide ideas con tus alimentos</span></a></li>
           <li><a href={href('/guias')}><span className="list-title"><Icon name="documento" size={18} /> Documentos</span><span className="muted small">PDF de tu nutricionista, guías y subir una versión nueva</span></a></li>
           <li>
             <a href={href('/dudas')}>

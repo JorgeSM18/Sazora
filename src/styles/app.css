@@ -333,3 +333,9 @@ a.chip { display: inline-flex; align-items: center; text-decoration: none; }
 .shop-qty { font: var(--text-small); color: var(--color-text-2); white-space: nowrap; }
 .shop-items.done .shop-text { text-decoration: line-through; color: var(--color-text-2); }
 .from-plan label { padding: var(--space-2); }
+
+/* Asistente */
+.chat-msg { display: grid; gap: var(--space-2); }
+.chat-msg.user .chat-text { justify-self: end; max-width: 85%; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.chat-text { white-space: pre-wrap; }
+.chat-form { align-items: end; }

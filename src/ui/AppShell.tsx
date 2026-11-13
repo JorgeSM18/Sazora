@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
 
 /** Uso ocasional: barra lateral en escritorio; en el móvil, desde Ajustes. */
 const SECONDARY: NavItem[] = [
+  { to: 'asistente', label: 'Asistente', icon: 'estrella', sections: ['asistente'] },
   { to: 'guias', label: 'Documentos', icon: 'documento', sections: ['guias'] },
   { to: 'dudas', label: 'Dudas de la importación', icon: 'aviso', sections: ['dudas'] },
   { to: 'ajustes', label: 'Ajustes', icon: 'perfil', sections: ['ajustes'] },

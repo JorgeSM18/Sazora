@@ -1,5 +1,6 @@
-// Datos nutricionales buscados en la web por Gemini (por 100 g o 100 ml). Entrada no fiable: se sanea,
-// se revisa antes de guardar y se guarda como "pendiente de revisión" con su fuente. Nunca pisa datos ya puestos.
+// Datos nutricionales por 100 g tomados de BEDCA u Open Food Facts (la IA solo empareja el alimento con su entrada).
+// Aun así es entrada no fiable: se sanea, se revisa antes de guardar y se guarda como "pendiente de revisión"
+// con su fuente. Nunca pisa datos ya puestos.
 
 import { NUTRIENT_KEYS, type AppData, type Food, type Nutrients } from './types';
 
@@ -10,7 +11,7 @@ export interface NutritionFound {
   source: string;
   url?: string;
   note?: string;
-  /** Avisos de coherencia (no bloquean: se ven al revisar). */
+  /** Avisos de coherencia: no bloquean, pero lo que lleva aviso no se marca para guardar hasta que se revisa. */
   warnings: string[];
 }
 
@@ -20,7 +21,7 @@ const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 const MAX: Record<keyof Nutrients, number> = { kcal: 900, protein: 100, carbs: 100, fat: 100 };
 
 /** Solo resultados de alimentos pedidos, con fuente y valores en rango. Lo que no se encontró se descarta. */
-export function sanitizeNutritionLookup(input: unknown, asked: Pick<Food, 'id'>[]): NutritionFound[] {
+export function sanitizeNutritionLookup(input: unknown, asked: (Pick<Food, 'id'> & Partial<Pick<Food, 'state' | 'equivalences'>>)[]): NutritionFound[] {
   const ids = new Set(asked.map((f) => f.id));
   const items = Array.isArray((input as Raw)?.items) ? ((input as Raw).items as Raw[]) : [];
   const out: NutritionFound[] = [];
@@ -40,10 +41,15 @@ export function sanitizeNutritionLookup(input: unknown, asked: Pick<Food, 'id'>[
       const est = 4 * protein + 4 * carbs + 9 * fat;
       if (kcal !== null && est > 20 && Math.abs(kcal - est) / est > 0.25) warnings.push(`Las calorías no cuadran con los macros (≈${Math.round(est)} kcal).`);
     }
+    const unit = i.unit === 'ml' ? 'ml' : 'g';
+    const food = asked.find((f) => f.id === foodId);
+    if (food?.state === 'cocido') warnings.push('Alimento cocido: comprueba que la fuente da el valor del alimento ya cocinado.');
+    const measured = (food?.equivalences ?? []).map((e) => e.unit).filter((u) => u !== 'porcion');
+    if (measured.length && !measured.includes(unit)) warnings.push(`Tu lista lo mide en ${[...new Set(measured)].join(' o ')}, no en ${unit}: estos datos no se podrán aplicar a esas cantidades.`);
     const url = str(i.source_url);
     out.push({
       foodId,
-      unit: i.unit === 'ml' ? 'ml' : 'g',
+      unit,
       values,
       source,
       url: /^https?:\/\//.test(url) ? url : undefined,
@@ -62,7 +68,7 @@ export function applyNutritionLookup(data: AppData, found: NutritionFound[], dat
     foods: data.foods.map((f) => {
       const n = byId.get(f.id);
       if (!n || f.nutrition) return f;
-      const source = `${n.source}${n.url ? ` (${n.url})` : ''} · buscado con Gemini el ${date}${n.note ? ` · ${n.note}` : ''}`;
+      const source = `${n.source}${n.url ? ` (${n.url})` : ''} · emparejado con IA el ${date}${n.note ? ` · ${n.note}` : ''}`;
       return { ...f, nutrition: { per: 100, unit: n.unit, values: n.values, source, status: 'pendiente' } };
     }),
   };

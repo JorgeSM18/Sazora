@@ -89,6 +89,7 @@ export function HomeScreen({ dateParam }: { dateParam: string | null }) {
         <a href={planLink} className="quick-card"><Icon name="plan" /> Planificar y registrar</a>
         <a href={href('/recetas')} className="quick-card"><Icon name="recetas" /> Recetario</a>
         <a href={href('/dieta')} className="quick-card"><Icon name="dieta" /> Consultar mi pauta</a>
+        <a href={href('/asistente')} className="quick-card"><Icon name="estrella" /> Preguntar al asistente</a>
       </nav>
     </div>
   );

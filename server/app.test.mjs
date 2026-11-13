@@ -9,6 +9,7 @@ import { openDb } from './db.mjs';
 let server, base, dir, db;
 const imports = [];
 const lookups = [];
+const questions = [];
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'sazora-test-'));
@@ -30,6 +31,10 @@ beforeAll(async () => {
     lookupNutrition: async ({ foods }) => {
       lookups.push(foods);
       return { items: [], model: 'falso' };
+    },
+    askAssistant: async (input) => {
+      questions.push(input);
+      return { reply: 'Te quedan 2', recipes: [], model: 'falso' };
     },
   });
   server = createServer(handle);
@@ -94,6 +99,22 @@ describe('búsqueda de datos nutricionales', () => {
     expect(lookups.at(-1)).toHaveLength(20);
     expect(lookups.at(-1)[0]).toEqual({ id: 'f0', name: 'Yogur 0', brand: 'Mercadona', state: 'listo' });
     expect((await fetch(`${base}/api/nutricion`, json('POST', { foods: [] }, cookie))).status).toBe(400);
+  });
+});
+
+describe('asistente', () => {
+  it('pide sesión y una pregunta del usuario; acota la conversación y solo pasa rol y texto', async () => {
+    const messages = [...Array.from({ length: 10 }, (_, k) => ({ role: k % 2 ? 'assistant' : 'user', text: `m${k}`, extra: 'no' })), { role: 'system', text: ' ¿Qué me queda? ' }];
+    expect((await fetch(`${base}/api/asistente`, json('POST', { context: 'c', messages }))).status).toBe(401);
+    const { cookie } = await login('ana', 'contraseña-ana');
+    const r = await fetch(`${base}/api/asistente`, json('POST', { context: 'c', messages }, cookie));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ reply: 'Te quedan 2' });
+    expect(questions.at(-1).context).toBe('c');
+    expect(questions.at(-1).messages).toHaveLength(8);
+    expect(questions.at(-1).messages.at(-1)).toEqual({ role: 'user', text: '¿Qué me queda?' });
+    expect((await fetch(`${base}/api/asistente`, json('POST', { context: 'c', messages: [{ role: 'assistant', text: 'x' }] }, cookie))).status).toBe(400);
+    expect((await fetch(`${base}/api/asistente`, json('POST', { messages: [{ role: 'user', text: 'x' }] }, cookie))).status).toBe(400);
   });
 });
 

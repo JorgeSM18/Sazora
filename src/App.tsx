@@ -16,6 +16,7 @@ import { GuideRoute } from './ui/screens/GuidesScreen';
 import { ShoppingScreen } from './ui/screens/ShoppingScreen';
 import { ReviewScreen } from './ui/screens/ReviewScreen';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
+import { AssistantScreen } from './ui/screens/AssistantScreen';
 import { useStore } from './state/store';
 
 export function App() {
@@ -46,6 +47,7 @@ export function App() {
     else if (section === 'dudas' && !id) screen = <ReviewScreen />;
     else if (section === 'ajustes' && !id) screen = <SettingsScreen />;
     else if (section === 'compra' && !id) screen = <ShoppingScreen />;
+    else if (section === 'asistente' && !id) screen = <AssistantScreen />;
     else if (section === 'plan' && !id) screen = <PlannerScreen dateParam={date} mealParam={meal} />;
     else if (section === 'recetas' && !id) screen = <RecipesScreen />;
     else if (section === 'recetas' && id === 'nueva' && !action) screen = <RecipeEditor />;
